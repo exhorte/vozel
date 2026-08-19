@@ -32,11 +32,24 @@ dossier ne contient que l'app desktop.
 
 | Dossier | Rôle |
 |---|---|
+| `components/ui/` | Primitives shadcn/ui générées via `npx shadcn@latest add <composant>` — ne pas écrire à la main |
 | `components/FloatingWidget/` | Widget flottant affiché pendant la dictée + visualiseur audio |
 | `components/SettingsWindow/` | Fenêtre de réglages : choix modèle ASR, dictionnaire |
 | `lib/tauri.ts` | Wrappers typés autour des commandes IPC — point d'entrée unique vers le backend |
+| `lib/utils.ts` | Helper `cn()` (généré par shadcn/ui, clsx + tailwind-merge) |
 | `state/` | État local (statut de dictée, réglages en mémoire) |
 | `types/` | Types partagés, à garder synchronisés avec les structs Rust sérialisées (`storage/settings.rs`, `asr/types.rs`) |
+| `index.css` | Point d'entrée Tailwind CSS v4 + variables de thème shadcn/ui (préset "Nova") |
+| `components.json` (racine) | Config CLI shadcn/ui — alias `@/*`, base color neutre, icônes lucide |
+
+### Multi-fenêtre
+
+`App.tsx` route vers un composant racine différent selon le label de la
+fenêtre Tauri courante (lu via `getCurrentWindow().label`) : `FloatingWidget`
+pour la fenêtre `overlay`, `SettingsWindow` pour la fenêtre `main`. Les deux
+fenêtres sont déclarées dans `src-tauri/tauri.conf.json` (`app.windows`) :
+`main` (fenêtre standard, décorée, redimensionnable) et `overlay`
+(transparente, sans bordure, `alwaysOnTop`, `skipTaskbar`, sans ombre).
 
 ## Points d'attention architecturaux
 
@@ -56,7 +69,9 @@ dossier ne contient que l'app desktop.
 Squelette généré via `create-tauri-app` (template `react-ts`) puis restructuré
 en modules. Tous les modules backend sont des stubs (`todo!`/`Err("not
 implemented")`) qui compilent (`cargo check` validé) mais n'ont pas encore de
-logique réelle. Le frontend compile (`tsc --noEmit` validé) avec des
-composants placeholders. La prochaine étape est la spec fonctionnelle du MVP
-(voir Roadmap Phase 0) avant de commencer l'implémentation réelle module par
-module.
+logique réelle. Frontend : Tailwind CSS v4 + shadcn/ui installés et
+fonctionnels (`tsc --noEmit` et `npm run build` validés), multi-fenêtre en
+place (`main` / `overlay`, routage par label). Composants métier
+(`FloatingWidget`, `SettingsWindow`) toujours des placeholders — logique réelle
+à implémenter au fil de `Spec_Frontend.md` Phase 1. Voir `PROGRESS.md` pour
+l'état détaillé et la prochaine étape.

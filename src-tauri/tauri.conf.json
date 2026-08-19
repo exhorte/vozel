@@ -12,9 +12,28 @@
   "app": {
     "windows": [
       {
+        "label": "main",
+        "title": "Vozel — Réglages",
+        "width": 900,
+        "height": 640,
+        "resizable": true,
+        "decorations": true,
+        "center": true
+      },
+      {
+        "label": "overlay",
         "title": "Vozel",
-        "width": 800,
-        "height": 600
+        "width": 280,
+        "height": 90,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "center": false,
+        "x": 40,
+        "y": 40
       }
     ],
     "security": {
