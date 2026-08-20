@@ -38,10 +38,9 @@ export async function listenDictationStatus(
   };
 }
 
-// Écoute le niveau d'amplitude audio émis pendant la capture
-// (`audio_level`, Spec_Backend_Desktop.md §1.2 — pas encore implémenté
-// côté `audio::capture`, aucun événement ne sera reçu tant que ce module
-// backend n'existe pas).
+// Écoute le niveau d'amplitude audio émis pendant la capture (`audio_level`,
+// pic RMS par frame 16 kHz, throttlé à 20 Hz — voir `src-tauri/src/audio/
+// capture.rs`, Spec_Backend_Desktop.md §1.2).
 export async function listenAudioLevel(
   onLevel: (level: number) => void,
 ): Promise<() => void> {

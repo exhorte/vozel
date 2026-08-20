@@ -38,16 +38,38 @@ pub fn run() {
             // persistés au lieu de `Settings::default()` une fois
             // `storage::settings` branché sur un fichier de config.
             let settings = Settings::default();
-            match HotkeyManager::register(app.handle().clone(), &settings.hotkey, settings.hotkey_mode) {
-                Ok(()) => {
-                    println!("[hotkey] raccourci '{}' enregistré ({:?})", settings.hotkey, settings.hotkey_mode);
+
+            // La capture audio doit exister (paused) avant l'enregistrement
+            // du hotkey, qui la pilote via `CaptureCommand::Start/Stop` —
+            // voir Spec_Backend_Desktop.md §1.2. `_pcm_rx` sera consommé par
+            // `asr::local` en §1.3 (non branché pour l'instant : le canal
+            // borné absorbe silencieusement les frames tant que rien ne les
+            // lit, sans fuite mémoire).
+            match audio::capture::spawn(app.handle().clone()) {
+                Ok((capture_tx, _pcm_rx)) => {
+                    println!("[audio] capture micro initialisée (paused, device par défaut)");
+                    match HotkeyManager::register(
+                        app.handle().clone(),
+                        &settings.hotkey,
+                        settings.hotkey_mode,
+                        capture_tx,
+                    ) {
+                        Ok(()) => {
+                            println!("[hotkey] raccourci '{}' enregistré ({:?})", settings.hotkey, settings.hotkey_mode);
+                        }
+                        Err(e) => {
+                            // Ne doit jamais faire planter l'app (Spec_Backend_Desktop.md
+                            // §1.1 critère d'acceptation : "sans crash") — un raccourci
+                            // mal configuré ou déjà pris par une autre app reste un cas
+                            // recouvrable, à surfacer dans les réglages en Phase 1 §1.2.
+                            eprintln!("[hotkey] échec d'enregistrement du raccourci '{}': {e}", settings.hotkey);
+                        }
+                    }
                 }
                 Err(e) => {
-                    // Ne doit jamais faire planter l'app (Spec_Backend_Desktop.md
-                    // §1.1 critère d'acceptation : "sans crash") — un raccourci
-                    // mal configuré ou déjà pris par une autre app reste un cas
-                    // recouvrable, à surfacer dans les réglages en Phase 1 §1.2.
-                    eprintln!("[hotkey] échec d'enregistrement du raccourci '{}': {e}", settings.hotkey);
+                    // Même logique : pas de micro dispo (ou permission OS
+                    // refusée) ne doit pas empêcher l'app de démarrer.
+                    eprintln!("[audio] échec d'initialisation de la capture micro : {e}");
                 }
             }
             Ok(())

@@ -1,8 +1,7 @@
 // Visualiseur audio temps réel : bandes de fréquence pilotées par le niveau
 // d'amplitude émis par le backend pendant la capture (`audio_level`, Rust
-// `audio::capture`, Spec_Backend_Desktop.md §1.2 — module pas encore
-// implémenté : les bandes restent au repos tant qu'aucun événement n'est
-// émis côté backend).
+// `audio::capture`, Spec_Backend_Desktop.md §1.2 — pic RMS par frame 16 kHz,
+// throttlé à 20 Hz côté Rust).
 
 import { useEffect, useState } from "react";
 import { listenAudioLevel } from "../../lib/tauri";

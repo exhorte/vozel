@@ -1,18 +1,165 @@
-//! Capture du flux micro (backend `cpal` prévu) et bufferisation en anneau.
+//! Capture du flux micro (`cpal`) : rééchantillonnage 16 kHz mono, filtrage
+//! des silences via `vad::is_speech`, et diffusion des frames PCM vers un
+//! canal partagé consommé plus tard par `asr` (Spec_Backend_Desktop.md
+//! §1.3, non branché pour l'instant).
 //!
-//! TODO (Phase 1) : ouvrir le device par défaut, gérer le changement de
-//! device à chaud, exposer un flux de frames PCM 16kHz mono vers `asr`.
+//! Le device et le `cpal::Stream` sont construits et possédés entièrement
+//! par un thread dédié (jamais déplacés vers un autre thread, à l'image de
+//! `hotkey::HotkeyManager` pour `GlobalHotKeyManager`) : start/stop se fait
+//! via `.play()`/`.pause()` sur ce même thread, piloté par un canal de
+//! commandes, pour rester sous la barre des 100 ms au déclenchement du
+//! hotkey (pas de réouverture du device à chaque bascule).
 
-#[allow(dead_code)]
-pub struct AudioCapture;
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
+use std::time::{Duration, Instant};
+use tauri::{AppHandle, Emitter};
 
-impl AudioCapture {
-    pub fn start() -> Result<Self, String> {
-        // TODO: initialiser cpal, démarrer le stream d'entrée.
-        Err("not implemented".into())
-    }
+use super::vad;
 
-    pub fn stop(&self) {
-        // TODO: arrêter proprement le stream.
+const TARGET_SAMPLE_RATE: u32 = 16_000;
+/// Nombre de frames consécutives sous le seuil VAD avant de couper la
+/// remontée vers l'ASR — laisse passer un bref creux entre deux mots plutôt
+/// que de trancher au premier silence.
+const SILENCE_FRAMES_BEFORE_CUT: u32 = 8;
+/// Capacité du canal PCM : au delà, les frames les plus anciennes sont
+/// perdues (`try_send`) plutôt que d'accumuler indéfiniment tant qu'aucun
+/// consommateur (`asr`, §1.3) n'est branché.
+const PCM_CHANNEL_CAPACITY: usize = 64;
+
+pub enum CaptureCommand {
+    Start,
+    Stop,
+}
+
+/// PCM 16 kHz mono, filtré par le VAD, prêt pour l'ASR.
+pub type PcmFrame = Vec<f32>;
+
+/// Initialise le device d'entrée par défaut (paused) et démarre le thread
+/// de capture. Retourne un `Sender` pour piloter start/stop (utilisé par
+/// `hotkey`) et un `Receiver` des frames PCM filtrées.
+pub fn spawn(app: AppHandle) -> Result<(Sender<CaptureCommand>, Receiver<PcmFrame>), String> {
+    let (cmd_tx, cmd_rx) = unbounded::<CaptureCommand>();
+    let (pcm_tx, pcm_rx) = bounded::<PcmFrame>(PCM_CHANNEL_CAPACITY);
+    let (ready_tx, ready_rx) = bounded::<Result<(), String>>(1);
+
+    std::thread::spawn(move || {
+        let host = cpal::default_host();
+        let device = match host.default_input_device() {
+            Some(d) => d,
+            None => {
+                let _ = ready_tx.send(Err("aucun périphérique d'entrée audio trouvé".into()));
+                return;
+            }
+        };
+        let config = match device.default_input_config() {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = ready_tx.send(Err(format!("configuration d'entrée audio invalide : {e}")));
+                return;
+            }
+        };
+        if config.sample_format() != cpal::SampleFormat::F32 {
+            let _ = ready_tx.send(Err(format!(
+                "format d'échantillon non supporté en V1 : {:?} (F32 attendu)",
+                config.sample_format()
+            )));
+            return;
+        }
+
+        let sample_rate = config.sample_rate().0;
+        let channels = config.channels() as usize;
+        let stream_config: cpal::StreamConfig = config.into();
+        let resample_ratio = TARGET_SAMPLE_RATE as f32 / sample_rate as f32;
+
+        let mut resample_pos: f32 = 0.0;
+        let mut silence_run: u32 = 0;
+        let mut last_level_emit = Instant::now();
+
+        let stream = match device.build_input_stream(
+            &stream_config,
+            move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                let mono: Vec<f32> = if channels <= 1 {
+                    data.to_vec()
+                } else {
+                    data.chunks(channels)
+                        .map(|frame| frame.iter().sum::<f32>() / channels as f32)
+                        .collect()
+                };
+                if mono.len() < 2 {
+                    return;
+                }
+
+                // Rééchantillonnage naïf par interpolation linéaire vers
+                // 16 kHz (suffisant pour la V1 ; un vrai resampler type
+                // `rubato` est une amélioration ultérieure indépendante du
+                // reste du pipeline).
+                let mut resampled = Vec::with_capacity((mono.len() as f32 * resample_ratio) as usize + 1);
+                let mut pos = resample_pos;
+                while (pos as usize) + 1 < mono.len() {
+                    let i = pos as usize;
+                    let frac = pos - i as f32;
+                    resampled.push(mono[i] * (1.0 - frac) + mono[i + 1] * frac);
+                    pos += 1.0 / resample_ratio;
+                }
+                resample_pos = (pos - (mono.len() - 1) as f32).max(0.0);
+
+                if resampled.is_empty() {
+                    return;
+                }
+
+                let speech = vad::is_speech(&resampled);
+                silence_run = if speech { 0 } else { silence_run.saturating_add(1) };
+
+                if last_level_emit.elapsed() >= Duration::from_millis(50) {
+                    last_level_emit = Instant::now();
+                    let peak = resampled.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+                    let _ = app.emit("audio_level", peak.min(1.0));
+                }
+
+                // Ne transmet pas les silences longs à l'ASR (critère
+                // d'acceptation §1.2) ; laisse passer les tout premiers
+                // frames silencieuses pour ne pas couper la fin d'un mot.
+                if speech || silence_run <= SILENCE_FRAMES_BEFORE_CUT {
+                    let _ = pcm_tx.try_send(resampled);
+                }
+            },
+            |e| eprintln!("[audio] erreur stream d'entrée : {e}"),
+            None,
+        ) {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = ready_tx.send(Err(format!("impossible d'ouvrir le flux d'entrée audio : {e}")));
+                return;
+            }
+        };
+
+        if let Err(e) = stream.pause() {
+            eprintln!("[audio] erreur pause initiale : {e}");
+        }
+        let _ = ready_tx.send(Ok(()));
+
+        while let Ok(cmd) = cmd_rx.recv() {
+            match cmd {
+                CaptureCommand::Start => {
+                    if let Err(e) = stream.play() {
+                        eprintln!("[audio] erreur play : {e}");
+                    }
+                }
+                CaptureCommand::Stop => {
+                    if let Err(e) = stream.pause() {
+                        eprintln!("[audio] erreur pause : {e}");
+                    }
+                }
+            }
+        }
+        // `stream` reste vivant jusqu'ici (fin de vie du thread = fin du
+        // process, `cmd_tx` n'est jamais droppé avant).
+    });
+
+    match ready_rx.recv() {
+        Ok(Ok(())) => Ok((cmd_tx, pcm_rx)),
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err("le thread de capture audio s'est arrêté avant initialisation".into()),
     }
 }

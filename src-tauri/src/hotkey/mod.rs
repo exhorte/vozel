@@ -8,9 +8,13 @@
 //! `GlobalHotKeyManager` doit être créé sur le thread qui exécute la boucle
 //! d'événements Win32 (le thread principal Tauri, via `.setup()`) — voir
 //! doc `global-hotkey`. Les événements (press/release) sont ensuite reçus
-//! sur un thread dédié et traduits en événements Tauri `listening_started` /
-//! `listening_stopped` vers le frontend.
+//! sur un thread dédié, traduits en événements Tauri `listening_started` /
+//! `listening_stopped` vers le frontend, et pilotent aussi le démarrage/
+//! arrêt réel de la capture micro (`audio::capture`, Spec_Backend_Desktop.md
+//! §1.2) via `CaptureCommand`.
 
+use crate::audio::capture::CaptureCommand;
+use crossbeam_channel::Sender;
 use global_hotkey::{
     hotkey::HotKey, GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState,
 };
@@ -37,7 +41,12 @@ impl HotkeyManager {
     /// le `Box::leak` volontairement pour qu'il vive aussi longtemps que le
     /// processus (l'OS le nettoie à la fermeture de l'app, comme n'importe
     /// quel handle de fenêtre/thread).
-    pub fn register(app: AppHandle, hotkey_str: &str, mode: HotkeyMode) -> Result<(), String> {
+    pub fn register(
+        app: AppHandle,
+        hotkey_str: &str,
+        mode: HotkeyMode,
+        capture_tx: Sender<CaptureCommand>,
+    ) -> Result<(), String> {
         let manager = GlobalHotKeyManager::new().map_err(|e| e.to_string())?;
         let hotkey: HotKey = hotkey_str
             .parse()
@@ -61,9 +70,11 @@ impl HotkeyManager {
                 listening = should_be_listening;
                 if listening {
                     println!("[hotkey] listening_started ({mode:?})");
+                    let _ = capture_tx.send(CaptureCommand::Start);
                     let _ = app.emit("listening_started", ());
                 } else {
                     println!("[hotkey] listening_stopped ({mode:?})");
+                    let _ = capture_tx.send(CaptureCommand::Stop);
                     let _ = app.emit("listening_stopped", ());
                 }
             }
