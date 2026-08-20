@@ -1,24 +1,74 @@
 //! Raccourci clavier global d'activation de la dictée (Phase 1).
 //!
-//! TODO : intégrer une crate cross-plateforme type `global-hotkey` (déjà
-//! utilisée dans l'écosystème Tauri). Deux modes attendus par l'utilisateur,
-//! configurables dans les réglages :
-//! - push-to-talk : dictée active tant que la touche est maintenue
-//! - toggle : un appui démarre, un second arrête
+//! Basé sur la crate `global-hotkey` (écosystème Tauri). Deux modes
+//! configurables par l'utilisateur :
+//! - `PushToTalk` : dictée active tant que la touche est maintenue.
+//! - `Toggle` : un appui démarre, un second appui arrête.
+//!
+//! `GlobalHotKeyManager` doit être créé sur le thread qui exécute la boucle
+//! d'événements Win32 (le thread principal Tauri, via `.setup()`) — voir
+//! doc `global-hotkey`. Les événements (press/release) sont ensuite reçus
+//! sur un thread dédié et traduits en événements Tauri `listening_started` /
+//! `listening_stopped` vers le frontend.
 
-#[allow(dead_code)]
+use global_hotkey::{
+    hotkey::HotKey, GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState,
+};
+use tauri::{AppHandle, Emitter};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum HotkeyMode {
     PushToTalk,
     Toggle,
 }
 
-#[allow(dead_code)]
 pub struct HotkeyManager;
 
 impl HotkeyManager {
-    pub fn register(_mode: HotkeyMode) -> Result<Self, String> {
-        // TODO: enregistrer le raccourci global et brancher les callbacks
-        // start/stop vers `audio::capture`.
-        Err("not implemented".into())
+    /// Enregistre `hotkey_str` (ex. `"control+alt+Space"`, syntaxe
+    /// `global_hotkey::hotkey::HotKey`) comme raccourci global et démarre
+    /// l'écoute des événements press/release sur un thread dédié.
+    ///
+    /// Doit être appelé sur le thread principal (boucle d'événements Win32,
+    /// typiquement depuis `.setup()`) — `GlobalHotKeyManager` n'est ni
+    /// `Send` ni `Sync` sur Windows (handle natif), il ne peut donc pas être
+    /// stocké dans le state managé de Tauri ni déplacé vers un thread : on
+    /// le `Box::leak` volontairement pour qu'il vive aussi longtemps que le
+    /// processus (l'OS le nettoie à la fermeture de l'app, comme n'importe
+    /// quel handle de fenêtre/thread).
+    pub fn register(app: AppHandle, hotkey_str: &str, mode: HotkeyMode) -> Result<(), String> {
+        let manager = GlobalHotKeyManager::new().map_err(|e| e.to_string())?;
+        let hotkey: HotKey = hotkey_str
+            .parse()
+            .map_err(|e| format!("raccourci invalide '{hotkey_str}' : {e}"))?;
+        manager.register(hotkey).map_err(|e| e.to_string())?;
+        Box::leak(Box::new(manager));
+
+        let receiver = GlobalHotKeyEvent::receiver();
+        std::thread::spawn(move || {
+            let mut listening = false;
+            while let Ok(event) = receiver.recv() {
+                let should_be_listening = match (mode, event.state()) {
+                    (HotkeyMode::PushToTalk, HotKeyState::Pressed) => true,
+                    (HotkeyMode::PushToTalk, HotKeyState::Released) => false,
+                    (HotkeyMode::Toggle, HotKeyState::Pressed) => !listening,
+                    (HotkeyMode::Toggle, HotKeyState::Released) => continue,
+                };
+                if should_be_listening == listening {
+                    continue;
+                }
+                listening = should_be_listening;
+                if listening {
+                    println!("[hotkey] listening_started ({mode:?})");
+                    let _ = app.emit("listening_started", ());
+                } else {
+                    println!("[hotkey] listening_stopped ({mode:?})");
+                    let _ = app.emit("listening_stopped", ());
+                }
+            }
+        });
+
+        Ok(())
     }
 }
