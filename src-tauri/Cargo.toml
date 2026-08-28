@@ -31,6 +31,12 @@ regex = "1.13.1"
 enigo = "0.6.1"
 arboard = { version = "3.6.1", default-features = false }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
+# Client HTTP bloquant pour le moteur ASR cloud (Spec_Backend_Desktop.md §2.4).
+# `ureq` (sync, sans runtime) plutôt que `reqwest` : `AsrEngine::transcribe`
+# est synchrone et `run_pipeline` tourne déjà sur un thread bloquant — pas de
+# risque de bloquer un runtime async. Multipart construit à la main (un champ
+# + un fichier, trivial). Voir PROGRESS.md.
+ureq = "3"
 
 [dev-dependencies]
 hound = "3.5.1"

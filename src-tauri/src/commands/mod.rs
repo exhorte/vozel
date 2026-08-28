@@ -13,7 +13,6 @@ use std::{thread, time::Duration};
 
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::asr::AsrEngine;
 use crate::audio::capture::CaptureCommand;
 use crate::injection::TextInjector;
 use crate::postprocess::cleanup;

@@ -8,6 +8,10 @@ export interface Settings {
   hotkey: string;
   hotkey_mode: HotkeyMode;
   cloud_enabled: boolean;
+  /** Fournisseur ASR cloud ("groq" par défaut). UI dans Spec_Frontend.md §2.3. */
+  cloud_provider: string;
+  /** Clé API "BYO" du fournisseur cloud (jamais loguée côté backend). */
+  cloud_api_key: string;
 }
 
 export interface TranscriptionResult {

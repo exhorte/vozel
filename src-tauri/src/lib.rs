@@ -20,17 +20,20 @@ mod storage;
 mod cloud;
 mod commands;
 
+use asr::cloud::CloudAsrEngine;
 use asr::local::LocalAsrEngine;
+use asr::{AsrEngine, RoutingAsrEngine};
 use audio::capture::{CaptureCommand, PcmFrame};
 use hotkey::HotkeyManager;
 use storage::settings::Settings;
 use tauri::Manager;
 
-/// État managé Tauri pour le moteur ASR local — `None` si le modèle n'est
-/// pas installé (voir `asr::local::LocalAsrEngine::load`), auquel cas la
-/// dictée reste indisponible mais l'app démarre normalement. Consommé par
-/// `commands::run_pipeline` (Spec_Backend_Desktop.md §1.6).
-pub struct AsrState(pub Option<LocalAsrEngine>);
+/// État managé Tauri pour l'ASR : un `RoutingAsrEngine` (local ↔ cloud selon
+/// les réglages, Spec_Backend_Desktop.md §2.4) derrière l'interface
+/// `AsrEngine`. `Option` conservé pour la forme historique attendue par
+/// `commands::run_pipeline` — en pratique toujours `Some` (l'aiguilleur
+/// gère lui-même l'indisponibilité de l'un ou l'autre moteur).
+pub struct AsrState(pub Option<Box<dyn AsrEngine + Send + Sync>>);
 
 /// État managé Tauri pour le pipeline de dictée : le `Sender` pour piloter
 /// `audio::capture` (partagé entre `hotkey` et les commandes IPC, pour que
@@ -88,7 +91,7 @@ pub fn run() {
                     eprintln!("[storage::settings] {e}, valeurs par défaut");
                     Settings::default()
                 });
-            app.manage(storage::db::Db(db_pool));
+            app.manage(storage::db::Db(db_pool.clone()));
             println!("[storage] base SQLite prête (migrations appliquées)");
 
             // La capture audio doit exister (paused) avant l'enregistrement
@@ -138,17 +141,23 @@ pub fn run() {
             // commité dans le dépôt — son absence au premier lancement est un
             // cas attendu et recouvrable (voir LocalAsrEngine::load), pas une
             // erreur fatale.
-            let asr_state = match LocalAsrEngine::load(app.handle()) {
+            let local_asr = match LocalAsrEngine::load(app.handle()) {
                 Ok(engine) => {
                     println!("[asr] moteur local Parakeet-TDT chargé");
-                    AsrState(Some(engine))
+                    Some(engine)
                 }
                 Err(e) => {
                     eprintln!("[asr] moteur local indisponible : {e}");
-                    AsrState(None)
+                    None
                 }
             };
-            app.manage(asr_state);
+            // Aiguilleur local ↔ cloud (§2.4) : présente une seule interface
+            // `AsrEngine` au pipeline, choisit à chaque dictée selon les
+            // réglages. Le client cloud ne fait aucun appel réseau tant que
+            // `cloud_enabled` est faux.
+            let router =
+                RoutingAsrEngine::new(local_asr, CloudAsrEngine::new(), db_pool.clone());
+            app.manage(AsrState(Some(Box::new(router))));
 
             Ok(())
         })

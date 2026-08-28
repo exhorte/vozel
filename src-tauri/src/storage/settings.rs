@@ -8,19 +8,49 @@
 //! bascule est faite une seule fois au démarrage par `ensure_migrated`, qui
 //! importe l'ancien `settings.json` puis le renomme en `.migrated`.
 
+use std::fmt;
+
 use crate::hotkey::HotkeyMode;
 use sqlx::{Row, SqlitePool};
 use tauri::{AppHandle, Manager};
 
 const LEGACY_SETTINGS_FILE_NAME: &str = "settings.json";
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Settings {
     pub asr_provider: String,
     /// Syntaxe `global_hotkey::hotkey::HotKey` (ex. `"control+alt+Space"`).
     pub hotkey: String,
     pub hotkey_mode: HotkeyMode,
     pub cloud_enabled: bool,
+    /// Fournisseur ASR cloud sélectionné (`"groq"` par défaut, voir
+    /// `asr::cloud::Provider`). Utilisé seulement si `cloud_enabled`.
+    pub cloud_provider: String,
+    /// Clé API "BYO" du fournisseur cloud. **Jamais loguée en clair** — le
+    /// `Debug` manuel ci-dessous la masque (Spec_Backend_Desktop.md §2.4).
+    pub cloud_api_key: String,
+}
+
+// `Debug` manuel : la clé API ne doit jamais apparaître dans un log, un
+// message d'erreur ou un rapport de panic, même via un `{:?}` involontaire.
+impl fmt::Debug for Settings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Settings")
+            .field("asr_provider", &self.asr_provider)
+            .field("hotkey", &self.hotkey)
+            .field("hotkey_mode", &self.hotkey_mode)
+            .field("cloud_enabled", &self.cloud_enabled)
+            .field("cloud_provider", &self.cloud_provider)
+            .field(
+                "cloud_api_key",
+                &if self.cloud_api_key.is_empty() {
+                    "<vide>"
+                } else {
+                    "<défini>"
+                },
+            )
+            .finish()
+    }
 }
 
 impl Default for Settings {
@@ -45,6 +75,8 @@ impl Default for Settings {
             hotkey: "control+shift+Space".into(),
             hotkey_mode: HotkeyMode::Toggle,
             cloud_enabled: false,
+            cloud_provider: "groq".into(),
+            cloud_api_key: String::new(),
         }
     }
 }
@@ -73,7 +105,8 @@ impl Settings {
     /// qu'en test ou si la migration ponctuelle a échoué.
     pub async fn load_db(pool: &SqlitePool) -> Result<Self, String> {
         let row = sqlx::query(
-            "SELECT asr_provider, hotkey, hotkey_mode, cloud_enabled FROM settings WHERE id = 1",
+            "SELECT asr_provider, hotkey, hotkey_mode, cloud_enabled, cloud_provider, cloud_api_key
+             FROM settings WHERE id = 1",
         )
         .fetch_optional(pool)
         .await
@@ -91,24 +124,31 @@ impl Settings {
             hotkey: row.try_get("hotkey").map_err(|e| e.to_string())?,
             hotkey_mode: hotkey_mode_from_str(&hotkey_mode),
             cloud_enabled: cloud_enabled != 0,
+            cloud_provider: row.try_get("cloud_provider").map_err(|e| e.to_string())?,
+            cloud_api_key: row.try_get("cloud_api_key").map_err(|e| e.to_string())?,
         })
     }
 
     /// Écrit (upsert) la ligne unique `settings.id = 1`.
     pub async fn save_db(&self, pool: &SqlitePool) -> Result<(), String> {
         sqlx::query(
-            "INSERT INTO settings (id, asr_provider, hotkey, hotkey_mode, cloud_enabled)
-             VALUES (1, ?1, ?2, ?3, ?4)
+            "INSERT INTO settings
+                 (id, asr_provider, hotkey, hotkey_mode, cloud_enabled, cloud_provider, cloud_api_key)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6)
              ON CONFLICT(id) DO UPDATE SET
-                 asr_provider  = excluded.asr_provider,
-                 hotkey        = excluded.hotkey,
-                 hotkey_mode   = excluded.hotkey_mode,
-                 cloud_enabled = excluded.cloud_enabled",
+                 asr_provider   = excluded.asr_provider,
+                 hotkey         = excluded.hotkey,
+                 hotkey_mode    = excluded.hotkey_mode,
+                 cloud_enabled  = excluded.cloud_enabled,
+                 cloud_provider = excluded.cloud_provider,
+                 cloud_api_key  = excluded.cloud_api_key",
         )
         .bind(&self.asr_provider)
         .bind(&self.hotkey)
         .bind(hotkey_mode_to_str(self.hotkey_mode))
         .bind(self.cloud_enabled as i64)
+        .bind(&self.cloud_provider)
+        .bind(&self.cloud_api_key)
         .execute(pool)
         .await
         .map_err(|e| format!("écriture des réglages : {e}"))?;
@@ -205,6 +245,8 @@ mod tests {
                 hotkey: "alt+shift+KeyD".into(),
                 hotkey_mode: HotkeyMode::PushToTalk,
                 cloud_enabled: true,
+                cloud_provider: "openai".into(),
+                cloud_api_key: "sk-test-secret".into(),
             };
             written.save_db(&pool).await.expect("save");
             let reloaded = Settings::load_db(&pool).await.expect("load");
@@ -223,6 +265,18 @@ mod tests {
             assert_eq!(count, 1);
             assert_eq!(Settings::load_db(&pool).await.expect("load 3"), updated);
         });
+    }
+
+    #[test]
+    fn debug_never_prints_api_key() {
+        let s = Settings {
+            cloud_api_key: "sk-super-secret-value".into(),
+            ..Settings::default()
+        };
+        let dbg = format!("{s:?}");
+        assert!(!dbg.contains("sk-super-secret-value"), "clé API fuitée dans Debug : {dbg}");
+        assert!(dbg.contains("<défini>"));
+        assert!(format!("{:?}", Settings::default()).contains("<vide>"));
     }
 
     #[test]
