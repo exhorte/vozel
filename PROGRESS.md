@@ -2,8 +2,8 @@
 
 ## État actuel
 - Phase en cours : Phase 2 — V1 (enrichissement fonctionnel, toujours Windows)
-- Dernière étape terminée : `Spec_Backend_Desktop.md` Phase 2 §2.1 — module `storage/` SQLite : base `vozel.db` dans `app_config_dir()`, migrations versionnées embarquées (`migrations/0001_initial.sql` : tables `settings` ligne unique + `dictionary` indexée), réglages migrés une seule fois depuis l'ancien `settings.json` de la Phase 1 puis renommé `.migrated`. `get_settings`/`save_settings` (IPC) lisent/écrivent SQLite. Choix `sqlx` direct plutôt que `tauri-plugin-sql` (voir "Déviations signalées"). Fait en Session 7 (suite), après la clôture de la Phase 1.
-- Prochaine étape : `Spec_Backend_Desktop.md` §2.2 — `storage/dictionary.rs` : CRUD sur la table `dictionary` (déjà créée par la migration §2.1) + application dans `postprocess::cleanup::clean` avant les règles de nettoyage. Puis §2.3 (LLM local + Command Mode), §2.4 (`asr/cloud.rs`). Côté frontend : `Spec_Frontend.md` §2.1 (`DictionaryPanel` CRUD, dépend de §2.2 backend), §2.2, §2.3.
+- Dernière étape terminée : `Spec_Backend_Desktop.md` Phase 2 §2.2 — `storage/dictionary.rs` : CRUD async sur la table `dictionary` (+ commandes IPC `dict_list`/`dict_create`/`dict_update`/`dict_delete`) et application dans `postprocess::cleanup::clean` (dictionnaire d'abord, avant les règles ; remplacement exact + tolérance casse/espacement/trait d'union). `run_pipeline` recharge le dictionnaire à chaque dictée. Fait en Session 7 (suite), juste après §2.1.
+- Prochaine étape : `Spec_Backend_Desktop.md` §2.3 — `postprocess/` LLM local (llama.cpp via `llama-cpp-2`, modèle GGUF quantifié) pour ponctuation/grammaire avec repli sur les règles Phase 1, + `command_mode::handle_command`. Puis §2.4 (`asr/cloud.rs`, Groq d'abord). Côté frontend : `Spec_Frontend.md` §2.1 (`DictionaryPanel` CRUD — backend prêt, commandes `dict_*` en place), §2.2, §2.3.
 - Reliquat Phase 1 (non bloquant pour la Phase 2) : confirmation utilisateur micro réel (jamais faisable par l'agent) ; bug amont Tauri sur le rendu de l'`overlay` (décision utilisateur : continuer sans corriger).
 - Blocages ouverts :
   - ~~Le benchmark Parakeet-TDT vs whisper.cpp en français...~~ **Résolu (2026-08-28, Session 4)** : benchmark réalisé, moteur tranché (Parakeet-TDT ONNX INT8) — voir journal Session 4 pour la méthode et les résultats bruts complets.
@@ -271,3 +271,26 @@ Après clôture et push de la Phase 1, l'utilisateur a demandé d'enchaîner sur
 - Commit `[Backend] Module storage/ SQLite : base, migrations versionnées, réglages migrés depuis JSON (Spec_Backend_Desktop.md §2.1)`.
 
 - Ouvert pour la suite : `Spec_Backend_Desktop.md` §2.2 (`storage/dictionary.rs` — CRUD + application dans `postprocess::cleanup::clean`, la table existe déjà). L'ancien `settings.json.migrated` peut être supprimé par l'utilisateur quand il veut (juste une sauvegarde de l'état Phase 1).
+
+### 2026-08-28 — Session 7 (suite) — `Spec_Backend_Desktop.md` §2.2 (`storage/dictionary.rs`)
+
+Enchaîné directement sur §2.1 (même session), la table `dictionary` existant déjà.
+
+- **`storage::dictionary`** : CRUD async sur la table `dictionary` —
+  - `DictionaryEntry { id, from, to }` (colonnes `from_text`/`to_text`), `serde` pour l'IPC.
+  - `list` (plus récentes d'abord), `create` (RETURNING l'entrée créée), `update`, `delete`. `create`/`update` normalisent `from` (trim + espaces internes réduits à un seul) et `to` (trim), refusent un `from` vide, et renvoient un message clair sur violation d'unicité (`from` unique) ou id inexistant.
+  - `active_replacements` : `Vec<(from, to)>` trié par longueur de `from` décroissante — une entrée plus spécifique (« type script pro ») l'emporte sur une plus courte (« type script »).
+- **Commandes IPC** `dict_list` / `dict_create` / `dict_update` / `dict_delete` (enregistrées dans `lib.rs`) — prêtes pour `Spec_Frontend.md` §2.1 (`DictionaryPanel`).
+- **`postprocess::cleanup::clean`** prend désormais `&[(String, String)]` en second paramètre et applique le dictionnaire **en premier** (§2.2 : « avant les autres règles »). `clean` reste synchrone et pure (les paires sont injectées, chargées depuis SQLite par l'appelant) — les 8 tests de règles existants sont conservés via un helper `clean_rules` (= `clean(raw, &[])`).
+  - Correspondance par regex compilée par entrée : `(?i)\b …\b`, mots de `from` séparés par `[\s\-]+` → tolère casse, espaces multiples et trait d'union (« type script » = « Type-Script » = « type  script »). C'est le « fuzzy-matching léger » de la spec ; un rapprochement par distance d'édition reste une amélioration ultérieure (interface inchangée). Cible insérée littéralement (`regex::NoExpand` — un `$` dans `to` n'est pas une référence de capture). Une entrée dont le regex ne compile pas (ex. `from` = "c++") est sautée avec un `eprintln!`, sans casser le nettoyage.
+- **`commands::run_pipeline`** : recharge `active_replacements` à chaque dictée (lookup < 10 ms même à 1000 entrées, cf. tests §2.1) → toute entrée ajoutée s'applique dès la dictée suivante (critère §2.2). Lecture en échec = nettoyage sans dictionnaire (ne bloque pas la dictée).
+
+- **Tests réels effectués** :
+  - **10 tests automatiques ajoutés** (`cargo test --lib`, 23 auto verts au total + 4 `#[ignore]`) : 4 sur le CRUD (base SQLite en mémoire) — round-trip create/list/update/delete, refus source vide + doublon, id manquant signalé sur update et delete, tri de `active_replacements` par longueur ; 6 sur `clean` — l'exemple littéral de la spec (« type script » → « TypeScript »), insensibilité casse + tolérance espacement/trait d'union, respect des frontières de mot (« js » remplacé, « jsp » non), application avant les règles (remplacement → suppression d'hésitation → capitalisation), cible littérale contenant `$`, texte inchangé sans correspondance.
+  - **App complète + IPC réel sur SQLite** (`npm run tauri dev` + CDP via `window.__TAURI_INTERNALS__.invoke`) : `dict_create` normalise «  type   script  » → « type script » ; `dict_list` renvoie les entrées plus récentes d'abord ; `dict_create` d'un doublon → erreur « une entrée existe déjà pour « js » » ; `dict_create` source vide → erreur ; `dict_update`/`dict_delete` sur id inexistant → erreur « aucune entrée … avec l'id N ». Après **kill + redémarrage complet de l'app**, `dict_list` renvoie toujours l'entrée restante — persistance confirmée. Entrées de test supprimées ensuite (DB propre).
+  - `cargo check` zéro avertissement.
+- Commit `[Backend] storage/dictionary.rs : CRUD + application dans postprocess::cleanup (Spec_Backend_Desktop.md §2.2)`.
+
+- Reste explicitement à faire par l'utilisateur pour boucler le critère §2.2 « appliquée dès la dictée suivante » de bout en bout : une vraie dictée micro avec une entrée de dictionnaire active (le chaînage `active_replacements` → `clean` est couvert par les tests unitaires ; seule la partie parole réelle → texte manque, comme pour §1.6).
+
+- Ouvert pour la suite : `Spec_Backend_Desktop.md` §2.3 (LLM local llama.cpp + Command Mode).
