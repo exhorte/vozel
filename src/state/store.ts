@@ -13,10 +13,7 @@ export function useDictationStatus() {
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let cancelled = false;
-    listenDictationStatus(
-      () => setStatus("listening"),
-      () => setStatus("idle"),
-    ).then((fn) => {
+    listenDictationStatus(setStatus).then((fn) => {
       if (cancelled) {
         fn();
       } else {

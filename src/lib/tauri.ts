@@ -4,7 +4,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { Settings } from "../types";
+import type { DictationStatus, Settings } from "../types";
 
 export async function startDictation(): Promise<void> {
   return invoke("start_dictation");
@@ -22,19 +22,34 @@ export async function saveSettings(settings: Settings): Promise<void> {
   return invoke("save_settings", { settings });
 }
 
-// Écoute les événements de cycle de vie de la dictée émis par
-// `hotkey::HotkeyManager` (`listening_started` / `listening_stopped`,
-// voir `src-tauri/src/hotkey/mod.rs`). Retourne une fonction de
-// désabonnement à appeler au démontage du composant appelant.
+// Écoute tous les événements de cycle de vie de la dictée, émis à la fois
+// par `hotkey::HotkeyManager` (`listening_started`/`listening_stopped`,
+// sur appui du raccourci physique) et par `commands::run_pipeline`
+// (`dictation_processing`/`dictation_idle`/`dictation_error`, pendant et
+// après la transcription — voir Spec_Backend_Desktop.md §1.6). Une seule
+// source de vérité : que la dictée soit déclenchée par le hotkey ou par un
+// bouton UI (`startDictation`/`stopDictation` ci-dessus, qui invoquent les
+// mêmes commandes backend que le hotkey), les mêmes événements arrivent
+// ici — pas de chemin d'état parallèle à synchroniser à la main. Retourne
+// une fonction de désabonnement à appeler au démontage du composant
+// appelant.
 export async function listenDictationStatus(
-  onStart: () => void,
-  onStop: () => void,
+  onChange: (status: DictationStatus) => void,
 ): Promise<() => void> {
-  const unlistenStart = await listen("listening_started", onStart);
-  const unlistenStop = await listen("listening_stopped", onStop);
+  const unlistenStart = await listen("listening_started", () => onChange("listening"));
+  const unlistenStop = await listen("listening_stopped", () => onChange("idle"));
+  const unlistenProcessing = await listen("dictation_processing", () => onChange("processing"));
+  const unlistenIdle = await listen("dictation_idle", () => onChange("idle"));
+  const unlistenError = await listen<string>("dictation_error", (event) => {
+    console.error("[dictation] échec du pipeline :", event.payload);
+    onChange("error");
+  });
   return () => {
     unlistenStart();
     unlistenStop();
+    unlistenProcessing();
+    unlistenIdle();
+    unlistenError();
   };
 }
 
