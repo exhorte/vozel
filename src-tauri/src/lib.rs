@@ -63,6 +63,10 @@ pub fn run() {
             commands::stop_dictation,
             commands::get_settings,
             commands::save_settings,
+            commands::dict_list,
+            commands::dict_create,
+            commands::dict_update,
+            commands::dict_delete,
         ])
         .setup(|app| {
             // Base SQLite (Spec_Backend_Desktop.md §2.1) — cœur de la

@@ -18,6 +18,7 @@ use crate::audio::capture::CaptureCommand;
 use crate::injection::TextInjector;
 use crate::postprocess::cleanup;
 use crate::storage::db::Db;
+use crate::storage::dictionary::{self, DictionaryEntry};
 use crate::storage::settings::Settings;
 use crate::{AsrState, PipelineState};
 
@@ -88,6 +89,47 @@ pub async fn save_settings(app: AppHandle, settings: Settings) -> Result<(), Str
     settings.save_db(&pool).await
 }
 
+// --- Dictionnaire personnalisé (Spec_Backend_Desktop.md §2.2) ---
+// CRUD exposé au frontend (`Spec_Frontend.md` §2.1, `DictionaryPanel`). Les
+// entrées sont appliquées dans `run_pipeline` → `cleanup::clean`.
+
+/// Toutes les entrées du dictionnaire, plus récentes d'abord.
+#[tauri::command]
+pub async fn dict_list(app: AppHandle) -> Result<Vec<DictionaryEntry>, String> {
+    let pool = app.state::<Db>().0.clone();
+    dictionary::list(&pool).await
+}
+
+/// Ajoute une entrée (`from` → `to`). Erreur si `from` existe déjà.
+#[tauri::command]
+pub async fn dict_create(
+    app: AppHandle,
+    from: String,
+    to: String,
+) -> Result<DictionaryEntry, String> {
+    let pool = app.state::<Db>().0.clone();
+    dictionary::create(&pool, &from, &to).await
+}
+
+/// Modifie `from`/`to` de l'entrée `id`.
+#[tauri::command]
+pub async fn dict_update(
+    app: AppHandle,
+    id: i64,
+    from: String,
+    to: String,
+) -> Result<(), String> {
+    let pool = app.state::<Db>().0.clone();
+    dictionary::update(&pool, id, &from, &to).await
+}
+
+/// Supprime l'entrée `id`.
+#[tauri::command]
+pub async fn dict_delete(app: AppHandle, id: i64) -> Result<(), String> {
+    let pool = app.state::<Db>().0.clone();
+    dictionary::delete(&pool, id).await
+}
+
 /// Vide les frames PCM accumulées depuis le dernier `Start` et, si l'audio
 /// capté n'est pas vide, enchaîne le pipeline complet : transcription
 /// locale (`asr::local`) → nettoyage par règles (`postprocess::cleanup`) →
@@ -146,7 +188,20 @@ pub fn run_pipeline(app: &AppHandle) {
         }
     };
 
-    let cleaned = cleanup::clean(&raw_text);
+    // Dictionnaire personnalisé (§2.2) : rechargé à chaque dictée (petit,
+    // lookup < 10 ms même à 1000 entrées — voir storage::db::tests) pour que
+    // toute entrée ajoutée par l'utilisateur s'applique dès la dictée
+    // suivante. Une erreur de lecture ne bloque pas la dictée : on nettoie
+    // sans dictionnaire.
+    let replacements = {
+        let pool = app.state::<Db>().0.clone();
+        tauri::async_runtime::block_on(crate::storage::dictionary::active_replacements(&pool))
+            .unwrap_or_else(|e| {
+                eprintln!("[pipeline] dictionnaire indisponible ({e}), nettoyage sans");
+                Vec::new()
+            })
+    };
+    let cleaned = cleanup::clean(&raw_text, &replacements);
     if cleaned.is_empty() {
         let _ = app.emit("dictation_idle", ());
         return;
@@ -262,7 +317,7 @@ mod tests {
 
         let raw = engine.transcribe(&pcm).expect("transcription").text;
         eprintln!("[test] brut (asr::local)      : {raw:?}");
-        let cleaned = cleanup::clean(&raw);
+        let cleaned = cleanup::clean(&raw, &[]);
         eprintln!("[test] nettoyé (postprocess)   : {cleaned:?}");
         assert!(!cleaned.is_empty(), "le nettoyage ne doit pas vider un texte transcrit valide");
 
