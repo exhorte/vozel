@@ -34,10 +34,9 @@ pub fn run() {
             commands::save_settings,
         ])
         .setup(|app| {
-            // TODO(Spec_Backend_Desktop.md §1.6) : charger les réglages
-            // persistés au lieu de `Settings::default()` une fois
-            // `storage::settings` branché sur un fichier de config.
-            let settings = Settings::default();
+            // Réglages persistés (fichier JSON, Spec_Backend_Desktop.md
+            // §1.6) — valeurs par défaut au tout premier lancement.
+            let settings = Settings::load(app.handle());
 
             // La capture audio doit exister (paused) avant l'enregistrement
             // du hotkey, qui la pilote via `CaptureCommand::Start/Stop` —
