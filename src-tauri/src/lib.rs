@@ -41,9 +41,17 @@ pub struct AsrState(pub Option<LocalAsrEngine>);
 /// déclencheurs (hotkey, futur bouton UI) doivent pouvoir y accéder depuis
 /// des threads différents sans jamais le lire concurremment pour de vrai
 /// (une seule dictée à la fois).
+///
+/// `listening` : drapeau partagé entre le thread du hotkey et les commandes
+/// IPC (`start_dictation`/`stop_dictation`). Une seule source de vérité pour
+/// « une dictée est-elle en cours ? », quel que soit le déclencheur — sans
+/// lui, le mode `Toggle` du hotkey garde son propre compteur interne et se
+/// désynchronise dès qu'une dictée a été démarrée/arrêtée depuis l'UI (le
+/// hotkey demanderait alors un second appui pour se recaler).
 pub struct PipelineState {
     pub capture_tx: crossbeam_channel::Sender<CaptureCommand>,
     pub pcm_rx: std::sync::Mutex<crossbeam_channel::Receiver<PcmFrame>>,
+    pub listening: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -70,15 +78,18 @@ pub fn run() {
             match audio::capture::spawn(app.handle().clone()) {
                 Ok((capture_tx, pcm_rx)) => {
                     println!("[audio] capture micro initialisée (paused, device par défaut)");
+                    let listening = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
                     app.manage(PipelineState {
                         capture_tx: capture_tx.clone(),
                         pcm_rx: std::sync::Mutex::new(pcm_rx),
+                        listening: listening.clone(),
                     });
                     match HotkeyManager::register(
                         app.handle().clone(),
                         &settings.hotkey,
                         settings.hotkey_mode,
                         capture_tx,
+                        listening,
                     ) {
                         Ok(()) => {
                             println!("[hotkey] raccourci '{}' enregistré ({:?})", settings.hotkey, settings.hotkey_mode);

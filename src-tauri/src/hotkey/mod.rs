@@ -13,6 +13,9 @@
 //! arrêt réel de la capture micro (`audio::capture`, Spec_Backend_Desktop.md
 //! §1.2) via `CaptureCommand`.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 use crate::audio::capture::CaptureCommand;
 use crossbeam_channel::Sender;
 use global_hotkey::{
@@ -46,6 +49,7 @@ impl HotkeyManager {
         hotkey_str: &str,
         mode: HotkeyMode,
         capture_tx: Sender<CaptureCommand>,
+        listening: Arc<AtomicBool>,
     ) -> Result<(), String> {
         let manager = GlobalHotKeyManager::new().map_err(|e| e.to_string())?;
         let hotkey: HotKey = hotkey_str
@@ -56,19 +60,23 @@ impl HotkeyManager {
 
         let receiver = GlobalHotKeyEvent::receiver();
         std::thread::spawn(move || {
-            let mut listening = false;
             while let Ok(event) = receiver.recv() {
+                // État courant lu depuis le drapeau partagé, pas depuis un
+                // compteur local : si la dictée a été démarrée/arrêtée depuis
+                // l'UI, le mode `Toggle` doit en tenir compte (sinon il faut
+                // un appui « fantôme » pour se recaler).
+                let currently_listening = listening.load(Ordering::SeqCst);
                 let should_be_listening = match (mode, event.state()) {
                     (HotkeyMode::PushToTalk, HotKeyState::Pressed) => true,
                     (HotkeyMode::PushToTalk, HotKeyState::Released) => false,
-                    (HotkeyMode::Toggle, HotKeyState::Pressed) => !listening,
+                    (HotkeyMode::Toggle, HotKeyState::Pressed) => !currently_listening,
                     (HotkeyMode::Toggle, HotKeyState::Released) => continue,
                 };
-                if should_be_listening == listening {
+                if should_be_listening == currently_listening {
                     continue;
                 }
-                listening = should_be_listening;
-                if listening {
+                listening.store(should_be_listening, Ordering::SeqCst);
+                if should_be_listening {
                     println!("[hotkey] listening_started ({mode:?})");
                     let _ = capture_tx.send(CaptureCommand::Start);
                     let _ = app.emit("listening_started", ());

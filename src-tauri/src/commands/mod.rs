@@ -8,6 +8,7 @@
 //! PCM accumulées (`PipelineState::pcm_rx`) et enchaîne
 //! `asr::local` → `postprocess::cleanup` → `injection::windows`.
 
+use std::sync::atomic::Ordering;
 use std::{thread, time::Duration};
 
 use tauri::{AppHandle, Emitter, Manager};
@@ -19,25 +20,39 @@ use crate::postprocess::cleanup;
 use crate::storage::settings::Settings;
 use crate::{AsrState, PipelineState};
 
-/// Démarre une session de dictée (déclenchée par le hotkey ou l'UI — un
-/// bouton dans `FloatingWidget`/`ModelPanel` reste à ajouter côté frontend,
-/// hors périmètre de cette session ; la commande elle-même est prête).
+/// Démarre une session de dictée. Déclenchée par le hotkey global ou par
+/// l'UI (clic sur `FloatingWidget`) — les deux passent par cette même
+/// commande, sans chemin d'état parallèle. Le drapeau partagé
+/// `PipelineState::listening` est la source de vérité commune : si une
+/// dictée est déjà en cours (démarrée par l'autre déclencheur), l'appel est
+/// idempotent et ne renvoie pas d'erreur.
 #[tauri::command]
 pub fn start_dictation(app: AppHandle) -> Result<(), String> {
     let pipeline = app.state::<PipelineState>();
+    if pipeline.listening.swap(true, Ordering::SeqCst) {
+        return Ok(());
+    }
     pipeline
         .capture_tx
         .send(CaptureCommand::Start)
-        .map_err(|e| format!("démarrage de la capture : {e}"))?;
+        .map_err(|e| {
+            pipeline.listening.store(false, Ordering::SeqCst);
+            format!("démarrage de la capture : {e}")
+        })?;
     let _ = app.emit("listening_started", ());
     Ok(())
 }
 
 /// Arrête la session de dictée en cours et déclenche le pipeline complet
-/// (transcription → nettoyage → injection) sur l'audio capté.
+/// (transcription → nettoyage → injection) sur l'audio capté. Idempotente :
+/// si aucune dictée n'est en cours (drapeau `listening` déjà à `false`,
+/// p.ex. déjà arrêtée par le hotkey), l'appel ne fait rien.
 #[tauri::command]
 pub fn stop_dictation(app: AppHandle) -> Result<(), String> {
     let pipeline = app.state::<PipelineState>();
+    if !pipeline.listening.swap(false, Ordering::SeqCst) {
+        return Ok(());
+    }
     pipeline
         .capture_tx
         .send(CaptureCommand::Stop)
