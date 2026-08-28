@@ -76,6 +76,13 @@ impl HotkeyManager {
                     println!("[hotkey] listening_stopped ({mode:?})");
                     let _ = capture_tx.send(CaptureCommand::Stop);
                     let _ = app.emit("listening_stopped", ());
+                    // Pipeline complet (Spec_Backend_Desktop.md §1.6) :
+                    // transcription -> nettoyage -> injection. Bloquant
+                    // (~1-2s), volontairement synchrone sur ce thread dédié
+                    // — un appui pendant le traitement met simplement en
+                    // attente l'événement suivant dans le canal `receiver`,
+                    // rien n'est perdu.
+                    crate::commands::run_pipeline(&app);
                 }
             }
         });

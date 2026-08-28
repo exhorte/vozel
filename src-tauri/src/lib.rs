@@ -21,6 +21,7 @@ mod cloud;
 mod commands;
 
 use asr::local::LocalAsrEngine;
+use audio::capture::{CaptureCommand, PcmFrame};
 use hotkey::HotkeyManager;
 use storage::settings::Settings;
 use tauri::Manager;
@@ -28,10 +29,22 @@ use tauri::Manager;
 /// État managé Tauri pour le moteur ASR local — `None` si le modèle n'est
 /// pas installé (voir `asr::local::LocalAsrEngine::load`), auquel cas la
 /// dictée reste indisponible mais l'app démarre normalement. Consommé par
-/// `commands::start_dictation` (Spec_Backend_Desktop.md §1.6, pas encore
-/// branché — cette Session 5 se limite au chargement + test réel du
-/// moteur, pas au branchement du pipeline complet).
+/// `commands::run_pipeline` (Spec_Backend_Desktop.md §1.6).
 pub struct AsrState(pub Option<LocalAsrEngine>);
+
+/// État managé Tauri pour le pipeline de dictée : le `Sender` pour piloter
+/// `audio::capture` (partagé entre `hotkey` et les commandes IPC, pour que
+/// les deux déclencheurs utilisent le même mécanisme) et le `Receiver` des
+/// frames PCM accumulées, vidé par `commands::run_pipeline` à l'arrêt d'une
+/// session de dictée. `Mutex` sur le `Receiver` seul (pas sur tout l'état) :
+/// un canal `crossbeam_channel::Receiver` n'est pas `Sync`, mais plusieurs
+/// déclencheurs (hotkey, futur bouton UI) doivent pouvoir y accéder depuis
+/// des threads différents sans jamais le lire concurremment pour de vrai
+/// (une seule dictée à la fois).
+pub struct PipelineState {
+    pub capture_tx: crossbeam_channel::Sender<CaptureCommand>,
+    pub pcm_rx: std::sync::Mutex<crossbeam_channel::Receiver<PcmFrame>>,
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -50,13 +63,17 @@ pub fn run() {
 
             // La capture audio doit exister (paused) avant l'enregistrement
             // du hotkey, qui la pilote via `CaptureCommand::Start/Stop` —
-            // voir Spec_Backend_Desktop.md §1.2. `_pcm_rx` sera consommé par
-            // `asr::local` en §1.3 (non branché pour l'instant : le canal
-            // borné absorbe silencieusement les frames tant que rien ne les
-            // lit, sans fuite mémoire).
+            // voir Spec_Backend_Desktop.md §1.2. `pcm_rx` est vidé par
+            // `commands::run_pipeline` (§1.6) à l'arrêt d'une dictée ; tant
+            // qu'aucune dictée n'est active la capture est en pause (aucune
+            // frame produite), donc le canal borné n'accumule rien à vide.
             match audio::capture::spawn(app.handle().clone()) {
-                Ok((capture_tx, _pcm_rx)) => {
+                Ok((capture_tx, pcm_rx)) => {
                     println!("[audio] capture micro initialisée (paused, device par défaut)");
+                    app.manage(PipelineState {
+                        capture_tx: capture_tx.clone(),
+                        pcm_rx: std::sync::Mutex::new(pcm_rx),
+                    });
                     match HotkeyManager::register(
                         app.handle().clone(),
                         &settings.hotkey,

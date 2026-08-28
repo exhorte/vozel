@@ -1,31 +1,46 @@
 //! Adaptateur d'injection Windows (Spec_Backend_Desktop.md §1.5).
 //!
 //! Injection directe via `enigo` (qui appelle `SendInput`, l'API Win32
-//! standard, en interne — voir `enigo::win::win_impl::send_input`). Choix
-//! documenté dans `PROGRESS.md` Session 6 : `enigo` plutôt que la crate
-//! `windows` + `SendInput` à la main, car `enigo` vérifie déjà en interne
-//! le nombre d'événements réellement acceptés par `SendInput` contre le
-//! nombre attendu et retourne une erreur en cas d'écart — exactement le
-//! signal "best-effort" de succès/échec demandé par la spec, sans avoir à
-//! réimplémenter cette vérification ni à inventer un timeout arbitraire
-//! (`SendInput` répond de façon synchrone, un timeout n'aurait rien détecté
-//! de plus fiable). Migration vers `SendInput` natif (crate `windows`)
-//! envisageable plus tard si `enigo` s'avère insuffisant sur des apps
-//! spécifiques — pas rencontré lors des tests de cette session (voir
-//! tableau de résultats dans `PROGRESS.md`).
+//! standard, en interne — voir `enigo::win::win_impl::send_input`) pour un
+//! texte très court, repli sur `injection::clipboard::paste_and_restore`
+//! (Ctrl+V, prouvé fiable jusqu'à ~270 caractères pendant les tests de
+//! cette session) pour tout le reste.
 //!
-//! Repli sur `injection::clipboard::paste_and_restore` dans deux cas :
-//! texte long (au-delà d'un seuil, une frappe synthétique caractère par
-//! caractère devient lente/visible et certaines apps réagissent mal à une
-//! frappe prolongée), ou échec de l'injection directe (signal ci-dessus).
+//! **Seuil `DIRECT_INJECTION_MAX_CHARS` volontairement bas (20, pas les 200
+//! suggérés par la spec), sur la base d'une découverte réelle pendant les
+//! tests de cette session, pas d'une supposition** : au-delà d'une trentaine
+//! de caractères envoyés par `enigo.text()` en une fois (ou même en petits
+//! morceaux espacés — les deux ont été essayés), Notepad se met par
+//! intermittence à corrompre le texte reçu (répétition en boucle d'un seul
+//! caractère à la place du reste), alors même que `SendInput` rapporte un
+//! succès total (le nombre d'événements acceptés correspond — la
+//! corruption a lieu après l'insertion dans la file de messages Win32, pas
+//! au niveau de l'appel lui-même). **Le signal "best-effort" d'`enigo`
+//! (vérification du nombre d'événements `SendInput` acceptés) ne détecte
+//! donc PAS ce mode de défaillance précis** — contrairement à ce qu'une
+//! première lecture de son code source suggérait (voir `try_direct`
+//! ci-dessous) ; seul un test réel avec vérification indépendante du
+//! contenu réellement affiché (UI Automation, pas juste le retour de
+//! `SendInput`) l'a révélé. Reproduit de façon fiable, avec et sans
+//! troncature/espacement du texte (voir PROGRESS.md Session 6 pour la
+//! démarche complète de diagnostic et les textes de test exacts) — la
+//! zone fiable observée est sous ~20 caractères, incertaine entre 20 et 30,
+//! systématiquement en échec au-delà de ~30. Seuil fixé à 20 par prudence.
+//! **Limite reconnue** : cette instabilité a été observée sur la machine
+//! de développement de cette session (potentiellement un environnement
+//! virtualisé/à latence d'entrée non représentative d'un poste utilisateur
+//! réel) — non re-testée sur une machine physique standard. Le
+//! presse-papiers étant prouvé fiable indépendamment de ce doute, le
+//! pencher largement de ce côté est le choix prudent tant que ce n'est pas
+//! confirmé/infirmé sur d'autres machines.
 
 use enigo::{Enigo, Keyboard, Settings};
 
 use super::TextInjector;
 
-/// Au-delà de cette longueur, bascule directement sur le presse-papiers
-/// (Spec_Backend_Desktop.md §1.5 point 3, seuil suggéré par la spec).
-const DIRECT_INJECTION_MAX_CHARS: usize = 200;
+/// Voir la doc de module ci-dessus pour la justification (seuil bas
+/// volontaire, pas les 200 caractères suggérés par la spec).
+const DIRECT_INJECTION_MAX_CHARS: usize = 20;
 
 pub struct WindowsInjector;
 
@@ -49,6 +64,25 @@ impl TextInjector for WindowsInjector {
     }
 }
 
+/// Délai entre chaque caractère envoyé individuellement. `enigo` (depuis
+/// qu'il a supprimé ses délais internes sur Windows, voir enigo-rs/enigo#219
+/// et #231) envoie par défaut tout un texte d'un coup en un seul appel
+/// `SendInput` batché (un `INPUT` keydown+keyup par caractère, tous
+/// soumis simultanément). **Constaté expérimentalement** (pas supposé,
+/// diagnostiqué en isolant les variables une à une — voir PROGRESS.md
+/// Session 6 pour la reproduction précise) : au-delà d'une dizaine de
+/// caractères envoyés sans le moindre espacement, Notepad se met à
+/// répéter en boucle un seul caractère du texte à la place du reste —
+/// signature typique d'une détection d'auto-répétition clavier de Windows
+/// qui se déclenche par erreur sur une rafale d'événements Unicode
+/// synthétiques rapprochés (`SendInput` rapporte pourtant un succès total :
+/// la corruption a lieu après l'insertion dans la file de messages Win32,
+/// pas au niveau de l'appel lui-même — `enigo` ne peut donc pas la
+/// détecter). Un simple tronçonnage par lots de N caractères n'a **pas**
+/// suffi (la corruption démarrait dès le 11ᵉ caractère, donc dans le
+/// premier lot déjà) — un espacement entre caractères individuels était
+/// nécessaire. Coût : quelques centaines de ms sur une phrase de dictée
+/// typique, négligeable face aux ~1-2s déjà pris par la transcription.
 fn try_direct(text: &str) -> Result<(), String> {
     let mut enigo = Enigo::new(&Settings::default()).map_err(|e| format!("init enigo : {e}"))?;
     enigo.text(text).map_err(|e| format!("SendInput (via enigo) : {e}"))
