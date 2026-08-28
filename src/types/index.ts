@@ -16,4 +16,12 @@ export interface TranscriptionResult {
   confidence?: number;
 }
 
+// Miroir de src-tauri/src/storage/dictionary.rs::DictionaryEntry.
+// `from` : tel que reconnu par l'ASR ; `to` : forme voulue.
+export interface DictionaryEntry {
+  id: number;
+  from: string;
+  to: string;
+}
+
 export type DictationStatus = "idle" | "listening" | "processing" | "error";

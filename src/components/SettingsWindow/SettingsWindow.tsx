@@ -2,14 +2,16 @@
 // Structure : un en-tête fixe, puis le contenu en sections séparées par un
 // `Separator`, le tout dans une `ScrollArea` si la fenêtre est trop petite.
 // `TooltipProvider` est monté ici une fois pour tous les tooltips explicatifs
-// des panneaux enfants (§1.3 point 2).
+// des panneaux enfants (§1.3 point 2). `Toaster` (sonner) pour les
+// confirmations d'actions du `DictionaryPanel` (§2.1).
 //
-// Panneaux : `ModelPanel` (Phase 1) ; `DictionaryPanel` reste un stub visuel
-// jusqu'à la Phase 2 (CRUD dictionnaire relié à `storage::dictionary`).
+// Panneaux : `ModelPanel` (Phase 1) ; `DictionaryPanel` (Phase 2 §2.1 —
+// CRUD dictionnaire relié à `storage::dictionary`).
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "@/components/ui/sonner";
 import { ModelPanel } from "./ModelPanel";
 import { DictionaryPanel } from "./DictionaryPanel";
 
@@ -32,6 +34,7 @@ export function SettingsWindow() {
           </div>
         </ScrollArea>
       </div>
+      <Toaster />
     </TooltipProvider>
   );
 }

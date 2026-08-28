@@ -4,7 +4,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { DictationStatus, Settings } from "../types";
+import type { DictationStatus, DictionaryEntry, Settings } from "../types";
 
 export async function startDictation(): Promise<void> {
   return invoke("start_dictation");
@@ -20,6 +20,26 @@ export async function getSettings(): Promise<Settings> {
 
 export async function saveSettings(settings: Settings): Promise<void> {
   return invoke("save_settings", { settings });
+}
+
+// --- Dictionnaire personnalisé (Spec_Backend_Desktop.md §2.2, commandes
+// `dict_*`). Le backend normalise `from`/`to` (trim + espaces), refuse un
+// `from` vide ou en doublon, et renvoie un message d'erreur explicite. ---
+
+export async function dictList(): Promise<DictionaryEntry[]> {
+  return invoke("dict_list");
+}
+
+export async function dictCreate(from: string, to: string): Promise<DictionaryEntry> {
+  return invoke("dict_create", { from, to });
+}
+
+export async function dictUpdate(id: number, from: string, to: string): Promise<void> {
+  return invoke("dict_update", { id, from, to });
+}
+
+export async function dictDelete(id: number): Promise<void> {
+  return invoke("dict_delete", { id });
 }
 
 // Écoute tous les événements de cycle de vie de la dictée, émis à la fois
