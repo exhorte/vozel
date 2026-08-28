@@ -20,8 +20,18 @@ mod storage;
 mod cloud;
 mod commands;
 
+use asr::local::LocalAsrEngine;
 use hotkey::HotkeyManager;
 use storage::settings::Settings;
+use tauri::Manager;
+
+/// État managé Tauri pour le moteur ASR local — `None` si le modèle n'est
+/// pas installé (voir `asr::local::LocalAsrEngine::load`), auquel cas la
+/// dictée reste indisponible mais l'app démarre normalement. Consommé par
+/// `commands::start_dictation` (Spec_Backend_Desktop.md §1.6, pas encore
+/// branché — cette Session 5 se limite au chargement + test réel du
+/// moteur, pas au branchement du pipeline complet).
+pub struct AsrState(pub Option<LocalAsrEngine>);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -71,6 +81,25 @@ pub fn run() {
                     eprintln!("[audio] échec d'initialisation de la capture micro : {e}");
                 }
             }
+
+            // Moteur ASR local (Parakeet-TDT ONNX INT8, Spec_Backend_Desktop.md
+            // §1.3) : chargé une seule fois ici, pas à chaque transcription
+            // (même principe que hotkey/audio). Le modèle (~670 Mo) n'est pas
+            // commité dans le dépôt — son absence au premier lancement est un
+            // cas attendu et recouvrable (voir LocalAsrEngine::load), pas une
+            // erreur fatale.
+            let asr_state = match LocalAsrEngine::load(app.handle()) {
+                Ok(engine) => {
+                    println!("[asr] moteur local Parakeet-TDT chargé");
+                    AsrState(Some(engine))
+                }
+                Err(e) => {
+                    eprintln!("[asr] moteur local indisponible : {e}");
+                    AsrState(None)
+                }
+            };
+            app.manage(asr_state);
+
             Ok(())
         })
         .run(tauri::generate_context!())
