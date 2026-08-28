@@ -1,14 +1,21 @@
-// Choix du moteur ASR local, activation du cloud et raccourci clavier
-// global (Spec_Frontend.md Phase 1 §1.2). Toute modification appelle
-// `saveSettings` immédiatement (persistée côté backend dans un fichier JSON,
-// voir `src-tauri/src/storage/settings.rs` — Spec_Backend_Desktop.md §1.6).
+// Réglages : moteur ASR local (§1.2), raccourci clavier global (§1.2),
+// et — quand le cloud est activé — fournisseur cloud + clé API + avertissement
+// confidentialité (§2.3). Toute modification appelle `saveSettings`
+// immédiatement, persisté en SQLite côté backend
+// (`src-tauri/src/storage/settings.rs`, Spec_Backend_Desktop.md §2.1).
 //
-// Layout (§1.3) : les quatre groupes de réglages sont séparés par un
-// `Separator` ; les options techniques (moteur local, bascule cloud) portent
-// un `Tooltip` explicatif.
+// Layout (§1.3) : groupes de réglages séparés par un `Separator` ; les
+// options techniques portent un `Tooltip` explicatif. La bascule local/cloud
+// est entièrement pilotable ici, sans redémarrage (l'aiguilleur backend
+// `asr::RoutingAsrEngine` relit les réglages à chaque dictée — §2.4).
 
 import { useEffect, useState } from "react";
-import { Info } from "lucide-react";
+import { Info, TriangleAlert } from "lucide-react";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
 import {
   Card,
   CardContent,
@@ -35,6 +42,18 @@ import {
 import { Input } from "@/components/ui/input";
 import { getSettings, saveSettings } from "@/lib/tauri";
 import type { HotkeyMode, Settings } from "@/types";
+
+// Fournisseurs ASR cloud. Seul Groq est branché côté backend
+// (`asr::cloud`, Spec_Backend_Desktop.md §2.4) ; OpenAI/Deepgram sont
+// affichés mais désactivés (« bientôt »), même traitement que `whisper-cpp`
+// dans le sélecteur de moteur local. Écart assumé vs le `combobox` de la
+// spec §2.3 : un `Select` avec options désactivées suffit pour 3 entrées et
+// reste cohérent avec le reste du panneau (voir PROGRESS.md).
+const CLOUD_PROVIDERS: Array<{ value: string; label: string; disabled?: boolean }> = [
+  { value: "groq", label: "Groq (Whisper large v3 turbo)" },
+  { value: "openai", label: "OpenAI (bientôt)", disabled: true },
+  { value: "deepgram", label: "Deepgram (bientôt)", disabled: true },
+];
 
 // Moteurs ASR locaux connus. `whisper-cpp` reste désactivé dans le
 // sélecteur : le benchmark français (voir PROGRESS.md, Session 4) a retenu
@@ -262,6 +281,63 @@ export function ModelPanel() {
               }
             />
           </div>
+
+          {settings.cloud_enabled && (
+            <div className="flex flex-col gap-4 rounded-md border border-border/60 bg-muted/30 p-3">
+              <Alert variant="destructive">
+                <TriangleAlert />
+                <AlertTitle>L'audio quitte votre appareil</AlertTitle>
+                <AlertDescription>
+                  Quand le cloud est activé, l'audio dicté est envoyé au
+                  fournisseur choisi pour transcription. Vozel reste
+                  local&nbsp;par défaut&nbsp;; n'activez le cloud que si vous
+                  l'assumez.
+                </AlertDescription>
+              </Alert>
+
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="cloud-provider">Fournisseur</Label>
+                <Select
+                  value={settings.cloud_provider}
+                  onValueChange={(value) =>
+                    persist({ ...settings, cloud_provider: value })
+                  }
+                >
+                  <SelectTrigger id="cloud-provider" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CLOUD_PROVIDERS.map((p) => (
+                      <SelectItem key={p.value} value={p.value} disabled={p.disabled}>
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="cloud-api-key">Clé API</Label>
+                <Input
+                  id="cloud-api-key"
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="gsk_…"
+                  value={settings.cloud_api_key}
+                  onChange={(e) =>
+                    persist({ ...settings, cloud_api_key: e.target.value })
+                  }
+                />
+                <p className="text-sm text-muted-foreground">
+                  Votre propre clé, stockée en local sur cette machine et
+                  jamais journalisée. Pour Groq&nbsp;:
+                  console.groq.com/keys. Prise en compte à la dictée
+                  suivante, sans redémarrage.
+                </p>
+              </div>
+            </div>
+          )}
 
           <Separator />
 
