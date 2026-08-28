@@ -65,9 +65,27 @@ pub fn run() {
             commands::save_settings,
         ])
         .setup(|app| {
-            // Réglages persistés (fichier JSON, Spec_Backend_Desktop.md
-            // §1.6) — valeurs par défaut au tout premier lancement.
-            let settings = Settings::load(app.handle());
+            // Base SQLite (Spec_Backend_Desktop.md §2.1) — cœur de la
+            // persistance depuis la Phase 2. Contrairement au micro / au
+            // modèle ASR / à l'ancien fichier de config (absents = cas
+            // recouvrables gérés sans crash), une base illisible dans le
+            // dossier de données de l'app signale un environnement cassé
+            // (disque plein, permissions, corruption) : on échoue le
+            // démarrage avec un message clair plutôt que de tourner à moitié
+            // sans réglages ni dictionnaire.
+            let db_pool = tauri::async_runtime::block_on(storage::db::init(app.handle()))
+                .map_err(|e| format!("initialisation de la base SQLite : {e}"))?;
+            // Migration ponctuelle des réglages Phase 1 (settings.json) vers
+            // SQLite, puis chargement de la ligne unique.
+            tauri::async_runtime::block_on(Settings::ensure_migrated(&db_pool, app.handle()))
+                .map_err(|e| format!("migration des réglages vers SQLite : {e}"))?;
+            let settings = tauri::async_runtime::block_on(Settings::load_db(&db_pool))
+                .unwrap_or_else(|e| {
+                    eprintln!("[storage::settings] {e}, valeurs par défaut");
+                    Settings::default()
+                });
+            app.manage(storage::db::Db(db_pool));
+            println!("[storage] base SQLite prête (migrations appliquées)");
 
             // La capture audio doit exister (paused) avant l'enregistrement
             // du hotkey, qui la pilote via `CaptureCommand::Start/Stop` —

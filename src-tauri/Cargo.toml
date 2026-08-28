@@ -30,6 +30,7 @@ ndarray = "0.17.2"
 regex = "1.13.1"
 enigo = "0.6.1"
 arboard = { version = "3.6.1", default-features = false }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
 
 [dev-dependencies]
 hound = "3.5.1"

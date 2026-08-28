@@ -17,6 +17,7 @@ use crate::asr::AsrEngine;
 use crate::audio::capture::CaptureCommand;
 use crate::injection::TextInjector;
 use crate::postprocess::cleanup;
+use crate::storage::db::Db;
 use crate::storage::settings::Settings;
 use crate::{AsrState, PipelineState};
 
@@ -62,23 +63,29 @@ pub fn stop_dictation(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Retourne les réglages courants pour la fenêtre de réglages (lus depuis le
-/// fichier de config JSON, valeurs par défaut si absent — voir
-/// `storage::settings::Settings::load`).
+/// Retourne les réglages courants pour la fenêtre de réglages (lus depuis
+/// SQLite, `settings.id = 1` — voir `storage::settings::Settings::load_db`).
+/// Ne peut pas échouer côté UI : une erreur de lecture est journalisée et
+/// les valeurs par défaut sont renvoyées.
 #[tauri::command]
-pub fn get_settings(app: AppHandle) -> Settings {
-    Settings::load(&app)
+pub async fn get_settings(app: AppHandle) -> Settings {
+    let pool = app.state::<Db>().0.clone();
+    Settings::load_db(&pool).await.unwrap_or_else(|e| {
+        eprintln!("[commands::get_settings] {e}, valeurs par défaut");
+        Settings::default()
+    })
 }
 
-/// Sauvegarde les réglages modifiés par l'utilisateur dans le fichier de
-/// config JSON (Spec_Backend_Desktop.md §1.6 — le SQLite complet est Phase 2).
+/// Sauvegarde les réglages modifiés par l'utilisateur dans SQLite
+/// (Spec_Backend_Desktop.md §2.1).
 /// Note : ne réapplique pas à chaud un raccourci clavier modifié (le hotkey
 /// global est enregistré une seule fois au démarrage, voir `hotkey::mod` —
 /// un redémarrage de l'app est nécessaire pour l'instant, à lever quand
 /// `HotkeyManager` gagnera une méthode de ré-enregistrement).
 #[tauri::command]
-pub fn save_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
-    settings.save(&app)
+pub async fn save_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
+    let pool = app.state::<Db>().0.clone();
+    settings.save_db(&pool).await
 }
 
 /// Vide les frames PCM accumulées depuis le dernier `Start` et, si l'audio
