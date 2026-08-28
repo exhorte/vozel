@@ -2,8 +2,8 @@
 
 ## État actuel
 - Phase en cours : Phase 2 — V1 (enrichissement fonctionnel, toujours Windows)
-- Dernière étape terminée : `Spec_Backend_Desktop.md` Phase 2 §2.4 — `asr/cloud.rs` : moteur ASR cloud (fournisseur **Groq** implémenté, OpenAI/Deepgram = branches à compléter) + `asr::RoutingAsrEngine` qui route local ↔ cloud selon `Settings::cloud_enabled` derrière la même interface `AsrEngine` (pipeline inchangé). Champs `cloud_provider`/`cloud_api_key` ajoutés à `Settings` (migration `0002`), clé jamais loguée. Fait en Session 7 (suite).
-- Prochaine étape : au choix — `Spec_Backend_Desktop.md` §2.3 (LLM local, **toujours bloqué** sur LLVM/libclang absent, voir "Blocages ouverts") ; `Spec_Frontend.md` §2.2 (Command Mode UI — dépend de §2.3 backend) ; `Spec_Frontend.md` §2.3 (UI fournisseur cloud + clé API — backend §2.4 prêt, champs `Settings` en place). §2.4.3 (ajouter OpenAI/Deepgram derrière `asr::cloud::Provider`) une fois Groq validé en conditions réelles par l'utilisateur.
+- Dernière étape terminée : `Spec_Frontend.md` Phase 2 §2.3 — UI fournisseur cloud + clé API dans `ModelPanel` (section conditionnelle sous la bascule cloud : `Alert` confidentialité, `Select` fournisseur, `Input type="password"` pour la clé). Bascule local/cloud pilotable depuis l'UI sans redémarrage. Fait en Session 7 (suite), après §2.4 backend.
+- Prochaine étape : au choix — `Spec_Backend_Desktop.md` §2.3 (LLM local, **toujours bloqué** sur LLVM/libclang absent, voir "Blocages ouverts") ; `Spec_Frontend.md` §2.2 (Command Mode UI — dépend de §2.3 backend) ; §2.4.3 (ajouter OpenAI/Deepgram derrière `asr::cloud::Provider`) une fois Groq validé en conditions réelles par l'utilisateur. **Fin de Phase 2 : il ne reste que §2.3 (LLM local + Command Mode) côté backend et §2.2 (Command Mode UI) côté frontend.**
 - Reliquat Phase 1 (non bloquant pour la Phase 2) : confirmation utilisateur micro réel (jamais faisable par l'agent) ; bug amont Tauri sur le rendu de l'`overlay` (décision utilisateur : continuer sans corriger).
 - Blocages ouverts :
   - ~~Le benchmark Parakeet-TDT vs whisper.cpp en français...~~ **Résolu (2026-08-28, Session 4)** : benchmark réalisé, moteur tranché (Parakeet-TDT ONNX INT8) — voir journal Session 4 pour la méthode et les résultats bruts complets.
@@ -23,6 +23,7 @@
 - **(Session 7 suite, `Spec_Frontend.md` §2.1) Formulaire d'ajout/édition du dictionnaire : formulaire contrôlé simple au lieu de `react-hook-form` + `zod` + shadcn `form`.** La spec cite ce trio comme « pattern recommandé par shadcn pour le composant `form` », pas comme une exigence. Le formulaire a deux champs texte (`from`, `to`), une validation triviale (non vides — bouton désactivé sinon) et l'unicité de `from` est vérifiée côté backend (`storage::dictionary`, message d'erreur clair renvoyé et affiché en toast). Trois dépendances supplémentaires ne se justifient pas ici ; cohérent avec les choix « minimal, justifié » du reste du projet. À revoir si un futur panneau a un formulaire réellement complexe.
 - **(Session 7 suite, §2.4) Client HTTP `ureq` + `multipart/form-data` construit à la main.** La spec parle de « streaming HTTP » ; l'endpoint transcription de Groq (comme celui d'OpenAI) n'est **pas** un flux — c'est un `POST` fichier-entier / réponse-JSON unique. `ureq` (sync, sans runtime) plutôt que `reqwest` : `AsrEngine::transcribe` est synchrone et `run_pipeline` s'exécute sur un thread bloquant (thread du hotkey ou pool de commandes IPC) — `reqwest::blocking` risquerait un « runtime dans un runtime » si un appelant devenait `async`. Le corps multipart (un champ `model` + un fichier `file`) est assez trivial pour être écrit à la main, ça évite une crate de plus. Encodage `f32` → WAV PCM16 fait à la main aussi (en-tête de 44 octets ; `hound` n'est qu'une `dev-dependency`).
 - **(Session 7 suite, §2.4) `AsrState` passe de `Option<LocalAsrEngine>` à `Option<Box<dyn AsrEngine + Send + Sync>>`** (l'aiguilleur `RoutingAsrEngine`). Le **seul** changement dans `commands/` est la suppression d'un `use crate::asr::AsrEngine;` devenu mort (les méthodes de trait sur un `Box<dyn Trait>` n'exigent pas le trait dans le scope) — pas un changement de logique. Le critère §2.4 « aucun changement dans `commands/` » vise le fait que le pipeline ne connaît pas le choix local/cloud : c'est bien le cas, `run_pipeline` appelle `engine.transcribe(&pcm)` à l'identique.
+- **(Session 7 suite, `Spec_Frontend.md` §2.3) `Select` au lieu du `combobox` pour le fournisseur cloud.** La spec §2.3 point 1 demande un `combobox` (pattern shadcn `command` + `popover`). Trois fournisseurs (dont un seul branché), pas de recherche utile : un `Select` shadcn — déjà utilisé pour le moteur ASR local, avec le même traitement « option désactivée / bientôt » pour OpenAI et Deepgram — est plus simple et cohérent avec le panneau. `combobox` non installé. À revoir si la liste de fournisseurs s'allonge beaucoup.
 - **(Session 7 suite, §2.4) `Settings` : `Debug` réécrit à la main pour masquer `cloud_api_key`.** La spec demande « jamais en clair dans les logs ». Un `#[derive(Debug)]` afficherait la clé via n'importe quel `{:?}` (log, message de panic). Le `Debug` manuel rend `cloud_api_key: "<défini>"` ou `"<vide>"`. La clé reste stockée **en clair dans `vozel.db`** (fichier privé du dossier de données de l'app, hors dépôt) — un chiffrement au repos (DPAPI Windows / trousseau) serait un durcissement ultérieur, non couvert par §2.4.
 
 ## Tests manuels restants
@@ -340,3 +341,28 @@ Enchaîné directement sur §2.1 (même session), la table `dictionary` existant
 - Commit `[Backend] asr/cloud.rs : moteur ASR cloud (Groq) + aiguilleur local/cloud transparent (Spec_Backend_Desktop.md §2.4)`.
 
 - Ouvert pour la suite : §2.4.3 (OpenAI/Deepgram) une fois Groq validé ; `Spec_Frontend.md` §2.3 (UI fournisseur + clé) ; débloquer §2.3 (LLVM).
+
+### 2026-08-28 — Session 7 (suite) — `Spec_Frontend.md` §2.3 (UI fournisseur cloud + clé API)
+
+Demandé par l'utilisateur : « où mettre la clé Groq ? » — il n'y avait pas encore de champ. Le backend §2.4 était prêt à la consommer.
+
+- Composant shadcn installé : `alert`. (`combobox` **non** installé — voir "Déviations signalées".)
+- Dans `ModelPanel`, sous la bascule « Utiliser le cloud », une **section conditionnelle** rendue seulement si `settings.cloud_enabled` :
+  - `Alert` (variant `destructive`, icône `TriangleAlert`) : « L'audio quitte votre appareil » — avertissement confidentialité, cohérent avec « local par défaut, cloud assumé » (§2.3 point 3).
+  - `Select` fournisseur (`cloud_provider`) : `groq` actif ; `openai`/`deepgram` affichés **désactivés** (« bientôt ») — même traitement que `whisper-cpp` dans le sélecteur de moteur local.
+  - `Input type="password"` (`autoComplete="off"`, `spellCheck={false}`) pour `cloud_api_key`, persisté à chaque frappe via `saveSettings`. Jamais journalisé côté frontend (aucun `console.log`). Aide : « clé stockée en local, jamais journalisée, prise en compte à la dictée suivante sans redémarrage ».
+- Commentaire d'en-tête de `ModelPanel` rafraîchi (mention JSON/§1.6 périmée → SQLite/§2.1 + §2.3/§2.4).
+- **Critère §2.3 point 4** (« bascule local/cloud pilotable entièrement depuis l'UI, sans redémarrage ») : satisfait — `RoutingAsrEngine` (§2.4) relit les réglages à chaque dictée, donc activer le cloud + saisir la clé + choisir le fournisseur prend effet dès la dictée suivante, sans relancer l'app.
+
+- **Test réel effectué** (`npm run tauri dev` + CDP sur la fenêtre de réglages) :
+  - `cloud_enabled` faux au départ → ni `Alert`, ni `Select` fournisseur, ni champ clé dans le DOM.
+  - Clic sur le switch → la section apparaît : `Alert` avec le bon titre, `Select` fournisseur présent, champ clé avec `type="password"` confirmé.
+  - Saisie d'une clé de test dans le champ mot de passe → `get_settings` renvoie `cloud_enabled:true`, `cloud_provider:"groq"`, `cloud_api_key:"gsk_test_ui_key_…"` (persisté).
+  - Re-clic sur le switch → section masquée, `cloud_enabled:false` persisté, **clé conservée** (ne pas la perdre sur un simple toggle).
+  - Aucune occurrence de la clé dans les logs de l'app. Réglages remis aux valeurs par défaut (clé vidée) après le test.
+  - `tsc --noEmit` et `npm run build` verts.
+- Commit `[Frontend] Sélection du fournisseur cloud + clé API dans les réglages (Spec_Frontend.md §2.3)`.
+
+- **Où mettre la clé Groq (pour l'utilisateur)** : lancer l'app → fenêtre Réglages → activer « Utiliser le cloud » → coller la clé (obtenue sur console.groq.com/keys) dans le champ « Clé API ». Effet immédiat à la dictée suivante. (Sinon, en manuel : table `settings` de `%APPDATA%\com.exponentvalue.vozel\vozel.db`, colonne `cloud_api_key`.)
+
+- Ouvert pour la suite : §2.4.3 (OpenAI/Deepgram) ; débloquer §2.3 (LLVM) puis `Spec_Frontend.md` §2.2 (Command Mode UI).
