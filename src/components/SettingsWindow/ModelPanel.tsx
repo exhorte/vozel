@@ -2,8 +2,13 @@
 // global (Spec_Frontend.md Phase 1 §1.2). Toute modification appelle
 // `saveSettings` immédiatement (persistée côté backend dans un fichier JSON,
 // voir `src-tauri/src/storage/settings.rs` — Spec_Backend_Desktop.md §1.6).
+//
+// Layout (§1.3) : les quatre groupes de réglages sont séparés par un
+// `Separator` ; les options techniques (moteur local, bascule cloud) portent
+// un `Tooltip` explicatif.
 
 import { useEffect, useState } from "react";
+import { Info } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -20,7 +25,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { getSettings, saveSettings } from "@/lib/tauri";
 import type { HotkeyMode, Settings } from "@/types";
@@ -104,6 +115,38 @@ function hotkeyFromEvent(event: React.KeyboardEvent): string | null {
   return [...mods, event.code].join("+");
 }
 
+// Libellé de champ avec, en option, une icône déclenchant un `Tooltip`
+// explicatif (§1.3 point 2 — options techniques).
+function FieldLabel({
+  htmlFor,
+  children,
+  tooltip,
+}: {
+  htmlFor?: string;
+  children: React.ReactNode;
+  tooltip?: string;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <Label htmlFor={htmlFor}>{children}</Label>
+      {tooltip && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="text-muted-foreground transition-colors hover:text-foreground"
+              aria-label="Plus d'informations"
+            >
+              <Info className="size-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{tooltip}</TooltipContent>
+        </Tooltip>
+      )}
+    </div>
+  );
+}
+
 export function ModelPanel() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [recording, setRecording] = useState(false);
@@ -136,7 +179,7 @@ export function ModelPanel() {
 
   if (loadError) {
     return (
-      <section className="model-panel p-4 text-sm text-destructive">
+      <section className="model-panel text-sm text-destructive">
         Impossible de charger les réglages : {loadError}
       </section>
     );
@@ -144,14 +187,14 @@ export function ModelPanel() {
 
   if (!settings) {
     return (
-      <section className="model-panel p-4 text-sm text-muted-foreground">
+      <section className="model-panel text-sm text-muted-foreground">
         Chargement des réglages…
       </section>
     );
   }
 
   return (
-    <section className="model-panel flex flex-col gap-4 p-4">
+    <section className="model-panel">
       <Card>
         <CardHeader>
           <CardTitle>Moteur de dictée</CardTitle>
@@ -162,7 +205,12 @@ export function ModelPanel() {
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
           <div className="flex flex-col gap-2">
-            <Label htmlFor="asr-engine">Moteur ASR local</Label>
+            <FieldLabel
+              htmlFor="asr-engine"
+              tooltip="Traitement 100 % sur votre machine : l'audio ne quitte jamais l'appareil, la dictée fonctionne hors ligne."
+            >
+              Moteur ASR local
+            </FieldLabel>
             <Select
               value={settings.asr_provider}
               onValueChange={(value) =>
@@ -192,9 +240,16 @@ export function ModelPanel() {
             </p>
           </div>
 
+          <Separator />
+
           <div className="flex items-center justify-between gap-4">
             <div className="flex flex-col gap-0.5">
-              <Label htmlFor="cloud-enabled">Utiliser le cloud</Label>
+              <FieldLabel
+                htmlFor="cloud-enabled"
+                tooltip="En local, l'audio ne quitte jamais l'appareil. Le cloud peut être plus rapide ou plus précis, mais envoie l'audio à un fournisseur tiers — désactivé par défaut."
+              >
+                Utiliser le cloud
+              </FieldLabel>
               <p className="text-sm text-muted-foreground">
                 Désactivé par défaut — Vozel fonctionne entièrement en local.
               </p>
@@ -207,6 +262,8 @@ export function ModelPanel() {
               }
             />
           </div>
+
+          <Separator />
 
           <div className="flex flex-col gap-2">
             <Label htmlFor="hotkey-input">Raccourci global</Label>
@@ -239,6 +296,8 @@ export function ModelPanel() {
               qu'un nouveau raccourci prenne effet.
             </p>
           </div>
+
+          <Separator />
 
           <div className="flex flex-col gap-2">
             <Label>Mode du raccourci</Label>
