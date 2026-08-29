@@ -42,7 +42,22 @@ ureq = "3"
 # pas d'`esaxx_fast` (C++), pas de `hf-hub`/réseau. Voir PROGRESS.md Session 9.
 tokenizers = { version = "0.23", default-features = false, features = ["fancy-regex"] }
 
+# Accès Win32 direct. Auparavant `dev-dependency` seulement (helpers de test
+# d'injection) ; promu en dépendance normale (ciblée Windows) pour le hook
+# clavier bas niveau `WH_KEYBOARD_LL` du push-to-talk Ctrl+Win seul
+# (Spec_Backend_Desktop.md §2.5) — la spec supposait `windows` déjà
+# dépendance, elle ne l'était qu'en dev. `Win32_UI_Input_KeyboardAndMouse`
+# ajoutée pour les constantes `VK_*` ; `Win32_System_LibraryLoader` pour
+# `GetModuleHandleW` (hmod du hook). Reste dispo pour les tests (les
+# dépendances normales le sont aussi en `#[cfg(test)]`).
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_System_LibraryLoader",
+] }
+
 [dev-dependencies]
 hound = "3.5.1"
-windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 

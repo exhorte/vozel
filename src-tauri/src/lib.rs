@@ -121,8 +121,8 @@ pub fn run() {
                         app.handle().clone(),
                         &settings.hotkey,
                         settings.hotkey_mode,
-                        capture_tx,
-                        listening,
+                        capture_tx.clone(),
+                        listening.clone(),
                     ) {
                         Ok(()) => {
                             println!("[hotkey] raccourci '{}' enregistré ({:?})", settings.hotkey, settings.hotkey_mode);
@@ -133,6 +133,25 @@ pub fn run() {
                             // mal configuré ou déjà pris par une autre app reste un cas
                             // recouvrable, à surfacer dans les réglages en Phase 1 §1.2.
                             eprintln!("[hotkey] échec d'enregistrement du raccourci '{}': {e}", settings.hotkey);
+                        }
+                    }
+
+                    // Push-to-talk Ctrl+Win seul (Spec_Backend_Desktop.md §2.5) :
+                    // mécanisme *additionnel* au hotkey classique ci-dessus, opt-in
+                    // (`ctrl_win_ptt_enabled`, défaut faux). Installe un hook clavier
+                    // bas niveau `WH_KEYBOARD_LL` — coût nul si non activé, donc pas
+                    // installé du tout sinon. Doit être appelé ici (thread de la
+                    // boucle de messages Win32), même contrainte que `HotkeyManager`.
+                    // Un changement du réglage prend effet au redémarrage.
+                    #[cfg(target_os = "windows")]
+                    if settings.ctrl_win_ptt_enabled {
+                        match hotkey::modifier_combo::register(
+                            app.handle().clone(),
+                            capture_tx,
+                            listening,
+                        ) {
+                            Ok(()) => {}
+                            Err(e) => eprintln!("[hotkey] push-to-talk Ctrl+Win indisponible : {e}"),
                         }
                     }
                 }

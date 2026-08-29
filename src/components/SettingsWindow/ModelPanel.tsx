@@ -1,8 +1,9 @@
 // Réglages : moteur ASR local (§1.2), raccourci clavier global (§1.2),
 // — quand le cloud est activé — fournisseur cloud + clé API + avertissement
-// confidentialité (§2.3), et switch « nettoyage IA local » (§2.4). Toute
-// modification appelle `saveSettings` immédiatement, persisté en SQLite côté
-// backend (`src-tauri/src/storage/settings.rs`, Spec_Backend_Desktop.md §2.1).
+// confidentialité (§2.3), switch « nettoyage IA local » (§2.4) et switch
+// « push-to-talk Ctrl+Win » (§2.5). Toute modification appelle `saveSettings`
+// immédiatement, persisté en SQLite côté backend
+// (`src-tauri/src/storage/settings.rs`, Spec_Backend_Desktop.md §2.1).
 //
 // Layout (§1.3) : groupes de réglages séparés par un `Separator` ; les
 // options techniques portent un `Tooltip` explicatif. La bascule local/cloud
@@ -458,6 +459,42 @@ export function ModelPanel() {
                 </div>
               ))}
             </RadioGroup>
+          </div>
+
+          <Separator />
+
+          {/* Push-to-talk Ctrl+Win seul (§2.5). Choix d'UX retenu : un simple
+              interrupteur, PAS un champ de capture. La combinaison est fixe
+              (Ctrl+Win, maintien = dictée) et non paramétrable — le champ de
+              capture au-dessus (`hotkeyFromEvent`) rejette de toute façon un
+              événement modificateur-seul (`MODIFIER_CODES`). Comme le cloud et
+              le LLM, l'effet est au redémarrage (installe un hook clavier bas
+              niveau au démarrage de l'app). */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
+                <FieldLabel
+                  htmlFor="ctrl-win-ptt"
+                  tooltip="En plus du raccourci ci-dessus : maintenir Ctrl + Win ensemble (sans autre touche) démarre la dictée, relâcher l'un des deux l'arrête. Utile car un raccourci « modificateurs seuls » n'est pas configurable dans le champ ci-dessus. Installe un hook clavier global — à n'activer que si vous vous en servez."
+                >
+                  Push-to-talk Ctrl+Win
+                </FieldLabel>
+                <p className="text-sm text-muted-foreground">
+                  Maintenir Ctrl&nbsp;+&nbsp;Win dicte, relâcher arrête.
+                  Désactivé par défaut.
+                </p>
+              </div>
+              <Switch
+                id="ctrl-win-ptt"
+                checked={settings.ctrl_win_ptt_enabled}
+                onCheckedChange={(checked) =>
+                  persist({ ...settings, ctrl_win_ptt_enabled: checked })
+                }
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Ce changement ne prend effet qu'au redémarrage de l'app.
+            </p>
           </div>
 
           {saveError && (

@@ -33,6 +33,11 @@ pub struct Settings {
     /// Le modèle n'est chargé au démarrage que si ce drapeau est vrai ; un
     /// changement prend effet au redémarrage de l'app.
     pub llm_cleanup_enabled: bool,
+    /// Push-to-talk sur le maintien de Ctrl+Win seul (§2.5). Opt-in,
+    /// désactivé par défaut : installe un hook clavier bas niveau
+    /// (`hotkey::modifier_combo`) au démarrage seulement si vrai ; un
+    /// changement prend effet au redémarrage de l'app.
+    pub ctrl_win_ptt_enabled: bool,
 }
 
 // `Debug` manuel : la clé API ne doit jamais apparaître dans un log, un
@@ -54,6 +59,7 @@ impl fmt::Debug for Settings {
                 },
             )
             .field("llm_cleanup_enabled", &self.llm_cleanup_enabled)
+            .field("ctrl_win_ptt_enabled", &self.ctrl_win_ptt_enabled)
             .finish()
     }
 }
@@ -83,6 +89,7 @@ impl Default for Settings {
             cloud_provider: "groq".into(),
             cloud_api_key: String::new(),
             llm_cleanup_enabled: false,
+            ctrl_win_ptt_enabled: false,
         }
     }
 }
@@ -112,7 +119,7 @@ impl Settings {
     pub async fn load_db(pool: &SqlitePool) -> Result<Self, String> {
         let row = sqlx::query(
             "SELECT asr_provider, hotkey, hotkey_mode, cloud_enabled, cloud_provider, cloud_api_key,
-                    llm_cleanup_enabled
+                    llm_cleanup_enabled, ctrl_win_ptt_enabled
              FROM settings WHERE id = 1",
         )
         .fetch_optional(pool)
@@ -126,6 +133,9 @@ impl Settings {
         let cloud_enabled: i64 = row.try_get("cloud_enabled").map_err(|e| e.to_string())?;
         let llm_cleanup_enabled: i64 =
             row.try_get("llm_cleanup_enabled").map_err(|e| e.to_string())?;
+        let ctrl_win_ptt_enabled: i64 = row
+            .try_get("ctrl_win_ptt_enabled")
+            .map_err(|e| e.to_string())?;
         let hotkey_mode: String = row.try_get("hotkey_mode").map_err(|e| e.to_string())?;
 
         Ok(Self {
@@ -136,6 +146,7 @@ impl Settings {
             cloud_provider: row.try_get("cloud_provider").map_err(|e| e.to_string())?,
             cloud_api_key: row.try_get("cloud_api_key").map_err(|e| e.to_string())?,
             llm_cleanup_enabled: llm_cleanup_enabled != 0,
+            ctrl_win_ptt_enabled: ctrl_win_ptt_enabled != 0,
         })
     }
 
@@ -144,16 +155,17 @@ impl Settings {
         sqlx::query(
             "INSERT INTO settings
                  (id, asr_provider, hotkey, hotkey_mode, cloud_enabled, cloud_provider, cloud_api_key,
-                  llm_cleanup_enabled)
-             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                  llm_cleanup_enabled, ctrl_win_ptt_enabled)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
              ON CONFLICT(id) DO UPDATE SET
-                 asr_provider        = excluded.asr_provider,
-                 hotkey              = excluded.hotkey,
-                 hotkey_mode         = excluded.hotkey_mode,
-                 cloud_enabled       = excluded.cloud_enabled,
-                 cloud_provider      = excluded.cloud_provider,
-                 cloud_api_key       = excluded.cloud_api_key,
-                 llm_cleanup_enabled = excluded.llm_cleanup_enabled",
+                 asr_provider         = excluded.asr_provider,
+                 hotkey               = excluded.hotkey,
+                 hotkey_mode          = excluded.hotkey_mode,
+                 cloud_enabled        = excluded.cloud_enabled,
+                 cloud_provider       = excluded.cloud_provider,
+                 cloud_api_key        = excluded.cloud_api_key,
+                 llm_cleanup_enabled  = excluded.llm_cleanup_enabled,
+                 ctrl_win_ptt_enabled = excluded.ctrl_win_ptt_enabled",
         )
         .bind(&self.asr_provider)
         .bind(&self.hotkey)
@@ -162,6 +174,7 @@ impl Settings {
         .bind(&self.cloud_provider)
         .bind(&self.cloud_api_key)
         .bind(self.llm_cleanup_enabled as i64)
+        .bind(self.ctrl_win_ptt_enabled as i64)
         .execute(pool)
         .await
         .map_err(|e| format!("écriture des réglages : {e}"))?;
@@ -261,6 +274,7 @@ mod tests {
                 cloud_provider: "openai".into(),
                 cloud_api_key: "sk-test-secret".into(),
                 llm_cleanup_enabled: true,
+                ctrl_win_ptt_enabled: true,
             };
             written.save_db(&pool).await.expect("save");
             let reloaded = Settings::load_db(&pool).await.expect("load");

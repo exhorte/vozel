@@ -13,6 +13,12 @@
 //! arrêt réel de la capture micro (`audio::capture`, Spec_Backend_Desktop.md
 //! §1.2) via `CaptureCommand`.
 
+/// Push-to-talk Ctrl+Win seul (§2.5) — mécanisme *additionnel* à
+/// `HotkeyManager`, pour le cas « modificateurs seuls » que `global-hotkey`
+/// ne sait pas représenter. Windows uniquement (hook `WH_KEYBOARD_LL`).
+#[cfg(target_os = "windows")]
+pub mod modifier_combo;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 

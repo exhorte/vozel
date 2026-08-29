@@ -14,6 +14,9 @@ export interface Settings {
   cloud_api_key: string;
   /** Nettoyage avancé par LLM local (§2.3). Opt-in ; effet au redémarrage. */
   llm_cleanup_enabled: boolean;
+  /** Push-to-talk sur le maintien de Ctrl+Win seul (§2.5). Opt-in (hook
+   *  clavier bas niveau) ; effet au redémarrage. */
+  ctrl_win_ptt_enabled: boolean;
 }
 
 export interface TranscriptionResult {
