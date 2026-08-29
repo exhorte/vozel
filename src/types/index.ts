@@ -12,6 +12,8 @@ export interface Settings {
   cloud_provider: string;
   /** Clé API "BYO" du fournisseur cloud (jamais loguée côté backend). */
   cloud_api_key: string;
+  /** Nettoyage avancé par LLM local (§2.3). Opt-in ; effet au redémarrage. */
+  llm_cleanup_enabled: boolean;
 }
 
 export interface TranscriptionResult {

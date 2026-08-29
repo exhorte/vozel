@@ -108,6 +108,7 @@ mod tests {
                     "hotkey".to_string(),
                     "hotkey_mode".to_string(),
                     "id".to_string(),
+                    "llm_cleanup_enabled".to_string(),
                 ]
             );
         });

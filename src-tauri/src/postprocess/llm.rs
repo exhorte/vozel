@@ -21,12 +21,24 @@
 #![allow(dead_code)]
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use ort::session::Session;
 use ort::value::{DynValue, Tensor};
+use tauri::{AppHandle, Manager};
 use tokenizers::Tokenizer;
+
+/// Emplacement du modèle LLM local dans le répertoire de données de l'app
+/// (`%APPDATA%\com.exponentvalue.vozel\models\llm\` sur Windows). Non
+/// commité (~1-3 Go) — placement manuel, voir PROGRESS.md.
+fn model_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let base = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("répertoire de données introuvable : {e}"))?;
+    Ok(base.join("models").join("llm"))
+}
 
 /// Géométrie du transformeur + tokens de fin, lues depuis `config.json` /
 /// `generation_config.json` de l'export.
@@ -58,6 +70,13 @@ fn as_usize(v: &serde_json::Value, key: &str) -> Result<usize, String> {
 }
 
 impl LlmEngine {
+    /// Charge le modèle depuis `models/llm/` du répertoire de données de
+    /// l'app. Absence = cas recouvrable (le pipeline retombe sur les
+    /// règles), pas une erreur fatale — même logique que `asr::local`.
+    pub fn load(app: &AppHandle) -> Result<Self, String> {
+        Self::load_from_dir(&model_dir(app)?)
+    }
+
     /// Charge un export `optimum` complet depuis `dir` : `config.json`
     /// (géométrie), `tokenizer.json` (tokeniseur), `model.onnx` (+ données
     /// externes dans le même dossier). `generation_config.json` est lu s'il

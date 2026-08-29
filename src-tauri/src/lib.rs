@@ -57,6 +57,13 @@ pub struct PipelineState {
     pub listening: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
+/// État managé Tauri pour le nettoyage du texte transcrit (§2.3) : soit les
+/// règles (`postprocess::RuleCleaner`), soit le LLM local
+/// (`postprocess::LlmCleaner`) selon `Settings::llm_cleanup_enabled` et la
+/// présence du modèle. `commands::run_pipeline` appelle `.clean()` sans
+/// savoir lequel tourne.
+pub struct CleanerState(pub Box<dyn postprocess::TextCleaner>);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -158,6 +165,30 @@ pub fn run() {
             let router =
                 RoutingAsrEngine::new(local_asr, CloudAsrEngine::new(), db_pool.clone());
             app.manage(AsrState(Some(Box::new(router))));
+
+            // Nettoyage du texte (§2.3) : `run_pipeline` ne voit qu'un
+            // `dyn TextCleaner`. Par défaut = règles (`RuleCleaner`). Le LLM
+            // local (`LlmCleaner`) n'est chargé que si `llm_cleanup_enabled`
+            // est vrai ET que le modèle est présent dans `models/llm/` ;
+            // toute défaillance (absence, échec de chargement) retombe
+            // silencieusement sur les règles — jamais de dictée cassée à
+            // cause du LLM. Un changement du réglage prend effet au
+            // redémarrage (le modèle pèse ~1-3 Go, pas de recharge à chaud).
+            let cleaner: Box<dyn postprocess::TextCleaner> = if settings.llm_cleanup_enabled {
+                match postprocess::llm::LlmEngine::load(app.handle()) {
+                    Ok(engine) => {
+                        println!("[postprocess] nettoyage LLM local activé");
+                        Box::new(postprocess::LlmCleaner::new(engine, 256))
+                    }
+                    Err(e) => {
+                        eprintln!("[postprocess] LLM demandé mais indisponible ({e}) — repli sur les règles");
+                        Box::new(postprocess::RuleCleaner)
+                    }
+                }
+            } else {
+                Box::new(postprocess::RuleCleaner)
+            };
+            app.manage(CleanerState(cleaner));
 
             Ok(())
         })

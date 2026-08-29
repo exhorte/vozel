@@ -15,11 +15,10 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::audio::capture::CaptureCommand;
 use crate::injection::TextInjector;
-use crate::postprocess::cleanup;
 use crate::storage::db::Db;
 use crate::storage::dictionary::{self, DictionaryEntry};
 use crate::storage::settings::Settings;
-use crate::{AsrState, PipelineState};
+use crate::{AsrState, CleanerState, PipelineState};
 
 /// Démarre une session de dictée. Déclenchée par le hotkey global ou par
 /// l'UI (clic sur `FloatingWidget`) — les deux passent par cette même
@@ -200,7 +199,11 @@ pub fn run_pipeline(app: &AppHandle) {
                 Vec::new()
             })
     };
-    let cleaned = cleanup::clean(&raw_text, &replacements);
+    // Nettoyage : règles ou LLM local selon les réglages / la présence du
+    // modèle (§2.3). `run_pipeline` ne connaît que l'interface `TextCleaner`
+    // — le repli sur les règles en cas de défaillance du LLM est interne à
+    // `LlmCleaner`.
+    let cleaned = app.state::<CleanerState>().0.clean(&raw_text, &replacements);
     if cleaned.is_empty() {
         let _ = app.emit("dictation_idle", ());
         return;
