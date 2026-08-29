@@ -16,6 +16,10 @@ dist-ssr
 src-tauri/target
 src-tauri/gen
 
+# Outillage scratch pour le spike LLM local §2.3 (venv Python, exports ONNX,
+# fixtures) — jamais commité (voir PROGRESS.md Session 8/9).
+.llm_spike/
+
 # Secrets
 .env
 .env.*
