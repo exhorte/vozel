@@ -37,6 +37,10 @@ sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio",
 # risque de bloquer un runtime async. Multipart construit à la main (un champ
 # + un fichier, trivial). Voir PROGRESS.md.
 ureq = "3"
+# Tokeniseur pour le LLM local (§2.3) : lit un `tokenizer.json` Hugging Face.
+# `default-features = false` + `fancy-regex` (pur Rust) : pas de `onig` (C),
+# pas d'`esaxx_fast` (C++), pas de `hf-hub`/réseau. Voir PROGRESS.md Session 9.
+tokenizers = { version = "0.23", default-features = false, features = ["fancy-regex"] }
 
 [dev-dependencies]
 hound = "3.5.1"

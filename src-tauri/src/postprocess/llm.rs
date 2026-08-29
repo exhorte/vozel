@@ -1,62 +1,161 @@
 //! LLM local pour le nettoyage/reformulation avancée et le futur Command
 //! Mode (Spec_Backend_Desktop.md §2.3).
 //!
-//! **Spike Session 8, en cours.** Décision d'architecture (voir
-//! `01_Recherche/Approche_LLM_Local.md` + PROGRESS.md Session 8) : LLM local
-//! via ONNX (crate `ort`, déjà utilisée pour Parakeet-TDT), **pas**
-//! `llama.cpp`/GGUF (bloqué par l'absence de LLVM/libclang sur la machine).
+//! **Spike Sessions 8-9.** Décision d'architecture (voir
+//! `01_Recherche/Approche_LLM_Local.md` + PROGRESS.md) : LLM local via ONNX
+//! (crate `ort`, déjà utilisée pour Parakeet-TDT), **pas** `llama.cpp`/GGUF
+//! (bloqué par l'absence de LLVM/libclang sur la machine).
 //!
-//! Contrepartie : `ort` exécute un graphe, point — il n'y a pas de boucle de
-//! génération autorégressive clé en main (contrairement à `llama.cpp`). Le
-//! cache KV, l'échantillonnage et la tokenisation sont à écrire à la main
-//! au-dessus d'un export ONNX « standard » (`optimum-cli export onnx`,
-//! schéma `input_ids` / `attention_mask` / `position_ids` /
-//! `past_key_values.N.key|value` → `logits` / `present.N.key|value`).
+//! Contrepartie : `ort` exécute un graphe, point — pas de boucle de
+//! génération autorégressive clé en main. Le cache KV et la boucle greedy
+//! sont écrits ici à la main au-dessus d'un export ONNX « standard »
+//! (`optimum-cli export onnx`, schéma `input_ids` / `attention_mask` /
+//! `position_ids` / `past_key_values.N.key|value` → `logits` /
+//! `present.N.key|value`). La tokenisation utilise la crate `tokenizers`
+//! (lecture directe de `tokenizer.json`).
 //!
-//! Jalon en cours : prouver qu'un simple forward pass tourne sous `ort`.
+//! Validé (Session 9) : Qwen2.5-1.5B-Instruct exporté en ONNX fp32 se charge
+//! et s'exécute sous `ort` 2.0.0-rc.13 (GQA + RoPE + RMSNorm, aucun
+//! opérateur non supporté).
 
 #![allow(dead_code)]
 
+use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
 
 use ort::session::Session;
 use ort::value::{DynValue, Tensor};
+use tokenizers::Tokenizer;
 
-/// Géométrie du transformeur, lue depuis `config.json` de l'export.
-#[derive(Debug, Clone, Copy)]
+/// Géométrie du transformeur + tokens de fin, lues depuis `config.json` /
+/// `generation_config.json` de l'export.
+#[derive(Debug, Clone)]
 pub struct ModelShape {
     pub num_layers: usize,
     /// Têtes K/V (== têtes d'attention si pas de GQA).
     pub num_kv_heads: usize,
     pub head_dim: usize,
-    pub eos_token_id: i64,
+    pub eos_token_ids: Vec<i64>,
 }
 
 pub struct LlmEngine {
     session: Mutex<Session>,
+    tokenizer: Tokenizer,
     shape: ModelShape,
 }
 
+fn read_json(path: &Path) -> Result<serde_json::Value, String> {
+    let raw = fs::read_to_string(path).map_err(|e| format!("lecture de '{}' : {e}", path.display()))?;
+    serde_json::from_str(&raw).map_err(|e| format!("JSON invalide dans '{}' : {e}", path.display()))
+}
+
+fn as_usize(v: &serde_json::Value, key: &str) -> Result<usize, String> {
+    v.get(key)
+        .and_then(|x| x.as_u64())
+        .map(|x| x as usize)
+        .ok_or_else(|| format!("champ '{key}' absent ou non entier dans config.json"))
+}
+
 impl LlmEngine {
-    /// Charge `<dir>/model.onnx`. La forme doit être fournie par l'appelant
-    /// (lue depuis `config.json` — pas encore automatisé dans ce spike).
-    pub fn load_from_dir(dir: &Path, shape: ModelShape) -> Result<Self, String> {
+    /// Charge un export `optimum` complet depuis `dir` : `config.json`
+    /// (géométrie), `tokenizer.json` (tokeniseur), `model.onnx` (+ données
+    /// externes dans le même dossier). `generation_config.json` est lu s'il
+    /// existe pour les ids de fin (sinon `config.json::eos_token_id`).
+    pub fn load_from_dir(dir: &Path) -> Result<Self, String> {
+        let cfg = read_json(&dir.join("config.json"))?;
+        let num_layers = as_usize(&cfg, "num_hidden_layers")?;
+        let num_heads = as_usize(&cfg, "num_attention_heads")?;
+        let num_kv_heads = cfg
+            .get("num_key_value_heads")
+            .and_then(|x| x.as_u64())
+            .map(|x| x as usize)
+            .unwrap_or(num_heads);
+        let head_dim = match cfg.get("head_dim").and_then(|x| x.as_u64()) {
+            Some(h) => h as usize,
+            None => as_usize(&cfg, "hidden_size")? / num_heads,
+        };
+
+        // eos : generation_config.json (peut être une liste) sinon config.json.
+        let eos_source = read_json(&dir.join("generation_config.json"))
+            .ok()
+            .and_then(|g| g.get("eos_token_id").cloned())
+            .or_else(|| cfg.get("eos_token_id").cloned());
+        let eos_token_ids = match eos_source {
+            Some(serde_json::Value::Number(n)) => vec![n.as_i64().unwrap_or_default()],
+            Some(serde_json::Value::Array(a)) => {
+                a.iter().filter_map(|x| x.as_i64()).collect()
+            }
+            _ => return Err("aucun eos_token_id trouvé (config/generation_config)".into()),
+        };
+
+        let shape = ModelShape {
+            num_layers,
+            num_kv_heads,
+            head_dim,
+            eos_token_ids,
+        };
+
+        let tokenizer = Tokenizer::from_file(dir.join("tokenizer.json"))
+            .map_err(|e| format!("chargement du tokeniseur : {e}"))?;
+
         let model_path = dir.join("model.onnx");
         let session = Session::builder()
             .map_err(|e| format!("ort::Session::builder : {e}"))?
             .commit_from_file(&model_path)
             .map_err(|e| format!("chargement de '{}' : {e}", model_path.display()))?;
+
         Ok(Self {
             session: Mutex::new(session),
+            tokenizer,
             shape,
         })
     }
 
-    /// Un seul forward pass. `input_ids` : tokens du prompt (préfill, pas de
-    /// passé). Retourne les `logits` de la **dernière** position (taille =
-    /// vocab). Sert de témoin que le graphe s'exécute sous `ort` avant
-    /// d'écrire la vraie boucle de génération.
+    pub fn shape(&self) -> &ModelShape {
+        &self.shape
+    }
+
+    /// Nettoyage/correction d'un texte dicté via le LLM (gabarit de chat
+    /// ChatML, décodage greedy). Le résultat est la réponse de l'assistant,
+    /// détokenisée et rognée. `max_new_tokens` borne la génération.
+    pub fn clean(&self, raw: &str, max_new_tokens: usize) -> Result<String, String> {
+        let raw = raw.trim();
+        if raw.is_empty() {
+            return Ok(String::new());
+        }
+        let system = "Tu corriges la ponctuation, les majuscules et les accords d'un texte dicté. \
+                      Ne reformule pas, n'ajoute rien, ne commente pas. \
+                      Réponds uniquement avec le texte corrigé.";
+        let prompt = format!(
+            "<|im_start|>system\n{system}<|im_end|>\n\
+             <|im_start|>user\n{raw}<|im_end|>\n\
+             <|im_start|>assistant\n"
+        );
+
+        let enc = self
+            .tokenizer
+            .encode(prompt, false)
+            .map_err(|e| format!("tokenisation : {e}"))?;
+        let prompt_ids: Vec<i64> = enc.get_ids().iter().map(|&i| i64::from(i)).collect();
+
+        let gen = self.generate_greedy(&prompt_ids, max_new_tokens, &self.shape.eos_token_ids)?;
+        // Retire un éventuel eos final avant décodage.
+        let gen_u32: Vec<u32> = gen
+            .iter()
+            .take_while(|id| !self.shape.eos_token_ids.contains(id))
+            .map(|&id| id as u32)
+            .collect();
+
+        let text = self
+            .tokenizer
+            .decode(&gen_u32, true)
+            .map_err(|e| format!("détokenisation : {e}"))?;
+        Ok(text.trim().to_string())
+    }
+
+    /// Un seul forward pass (préfill, pas de passé). Retourne les `logits`
+    /// de la dernière position. Témoin que le graphe s'exécute sous `ort`.
     pub fn forward_prefill(&self, input_ids: &[i64]) -> Result<Vec<f32>, String> {
         let seq = input_ids.len();
         if seq == 0 {
@@ -64,7 +163,6 @@ impl LlmEngine {
         }
 
         let mut inputs: Vec<(String, DynValue)> = Vec::with_capacity(3 + self.shape.num_layers * 2);
-
         inputs.push((
             "input_ids".to_string(),
             Tensor::from_array(([1usize, seq], input_ids.to_vec()))
@@ -83,8 +181,6 @@ impl LlmEngine {
                 .map_err(|e| format!("tensor position_ids : {e}"))?
                 .into_dyn(),
         ));
-
-        // Cache KV vide : [1, num_kv_heads, 0, head_dim].
         for layer in 0..self.shape.num_layers {
             for kind in ["key", "value"] {
                 let name = format!("past_key_values.{layer}.{kind}");
@@ -109,7 +205,6 @@ impl LlmEngine {
         let (shape, data) = outputs["logits"]
             .try_extract_tensor::<f32>()
             .map_err(|e| format!("extraction logits : {e}"))?;
-        // [1, seq, vocab]
         if shape.len() != 3 {
             return Err(format!("logits de rang {} (attendu 3)", shape.len()));
         }
@@ -122,10 +217,9 @@ impl LlmEngine {
     /// threadé d'un appel à l'autre — la brique que `llama.cpp` fournit clé
     /// en main et qu'il faut écrire à la main au-dessus d'`ort`.
     ///
-    /// `prompt_ids` : tokens du prompt déjà mis en forme (gabarit de chat
-    /// inclus). Retourne les tokens **générés** (hors prompt), s'arrête sur
-    /// un id de `eos_ids` ou à `max_new_tokens`. Pas d'échantillonnage
-    /// (température/top-p) pour ce spike — décodage déterministe.
+    /// `prompt_ids` : tokens du prompt déjà mis en forme. Retourne les
+    /// tokens **générés** (hors prompt), s'arrête sur un id de `eos_ids` ou
+    /// à `max_new_tokens`. Décodage déterministe (argmax).
     pub fn generate_greedy(
         &self,
         prompt_ids: &[i64],
@@ -139,8 +233,6 @@ impl LlmEngine {
         let kvh = self.shape.num_kv_heads;
         let hd = self.shape.head_dim;
 
-        // Cache KV possédé entre les itérations : chaque couche stocke
-        // key/value aplaties, de forme [1, kvh, past_len, hd].
         let mut past_k: Vec<Vec<f32>> = vec![Vec::new(); n_layers];
         let mut past_v: Vec<Vec<f32>> = vec![Vec::new(); n_layers];
         let mut past_len = 0usize;
@@ -153,8 +245,6 @@ impl LlmEngine {
             .lock()
             .map_err(|_| "mutex session LLM empoisonné".to_string())?;
 
-        // +1 : la première itération est le préfill (ne compte pas comme un
-        // token généré tant qu'on n'a pas lu son argmax).
         for _ in 0..=max_new_tokens {
             let seq = cur.len();
             let total = past_len + seq;
@@ -241,32 +331,14 @@ fn argmax(v: &[f32]) -> usize {
 #[cfg(test)]
 mod tests {
     //! `#[ignore]` : nécessite un export ONNX présent sur disque, non
-    //! commité (voir PROGRESS.md Session 8 pour la procédure). Lancer avec
+    //! commité (voir PROGRESS.md Session 8/9 pour la procédure). Lancer avec
     //! `VOZEL_LLM_MODEL_DIR=<dir> cargo test --lib -- --ignored llm::`.
     use super::*;
 
     fn model_dir() -> std::path::PathBuf {
         std::env::var("VOZEL_LLM_MODEL_DIR")
-            .expect("VOZEL_LLM_MODEL_DIR non défini (dossier contenant model.onnx)")
+            .expect("VOZEL_LLM_MODEL_DIR non défini (dossier de l'export optimum)")
             .into()
-    }
-
-    fn env_usize(key: &str, default: usize) -> usize {
-        std::env::var(key)
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(default)
-    }
-
-    // Géométrie via l'env (défauts = export gpt2). Pour Qwen2.5-1.5B :
-    // VOZEL_LLM_LAYERS=28 VOZEL_LLM_KV_HEADS=2 VOZEL_LLM_HEAD_DIM=128.
-    fn shape_from_env() -> ModelShape {
-        ModelShape {
-            num_layers: env_usize("VOZEL_LLM_LAYERS", 12),
-            num_kv_heads: env_usize("VOZEL_LLM_KV_HEADS", 12),
-            head_dim: env_usize("VOZEL_LLM_HEAD_DIM", 64),
-            eos_token_id: 50256,
-        }
     }
 
     /// Jalon principal du spike : un forward pass d'un export `optimum`
@@ -275,10 +347,11 @@ mod tests {
     #[test]
     #[ignore]
     fn forward_pass_runs_under_ort() {
-        let engine =
-            LlmEngine::load_from_dir(&model_dir(), shape_from_env()).expect("chargement du modèle");
+        let engine = LlmEngine::load_from_dir(&model_dir()).expect("chargement du modèle");
+        eprintln!("[llm-spike] shape = {:?}", engine.shape());
+        // Prompt court quelconque (les ids exacts importent peu ici).
         let logits = engine
-            .forward_prefill(&[15496, 11, 616, 1438, 318])
+            .forward_prefill(&[9707, 11, 847, 829, 374])
             .expect("forward pass");
         eprintln!(
             "[llm-spike] vocab={} argmax(dernière position)={}",
@@ -288,39 +361,20 @@ mod tests {
         assert!(logits.len() > 1000, "vocab suspicieusement petit : {}", logits.len());
     }
 
-    /// Boucle de génération complète : prompt (tokens fournis via
-    /// `VOZEL_LLM_PROMPT_IDS`, générés par `_llm_spike/prompt_fixture.py`) →
-    /// tokens générés. On imprime les ids : à comparer au décodage de
-    /// référence Python (`prompt_fixture.py ... refgen`).
+    /// Bout-en-bout : un vrai texte dicté (pas des ids pré-calculés) →
+    /// tokenisation → boucle greedy → détokenisation → texte corrigé.
+    /// Le critère qui compte : la sortie est cohérente à l'œil.
     #[test]
     #[ignore]
-    fn greedy_generation_produces_tokens() {
-        let prompt_ids: Vec<i64> = std::env::var("VOZEL_LLM_PROMPT_IDS")
-            .expect("VOZEL_LLM_PROMPT_IDS non défini (ids séparés par des virgules)")
-            .split(',')
-            .map(|s| s.trim().parse().expect("id non entier"))
-            .collect();
-        let eos: Vec<i64> = std::env::var("VOZEL_LLM_EOS")
-            .unwrap_or_else(|_| "151645,151643".to_string())
-            .split(',')
-            .map(|s| s.trim().parse().unwrap())
-            .collect();
-        let max_new = env_usize("VOZEL_LLM_MAX_NEW", 60);
-
-        let engine =
-            LlmEngine::load_from_dir(&model_dir(), shape_from_env()).expect("chargement du modèle");
+    fn clean_produces_coherent_text() {
+        let engine = LlmEngine::load_from_dir(&model_dir()).expect("chargement du modèle");
+        let raw = "alors voila le texte a corriger je suis aller au marche hier avec mon frere";
         let t0 = std::time::Instant::now();
-        let out = engine
-            .generate_greedy(&prompt_ids, max_new, &eos)
-            .expect("génération");
-        let dt = t0.elapsed();
+        let cleaned = engine.clean(raw, 80).expect("clean");
         eprintln!(
-            "[llm-spike] {} tokens générés en {:.1}s ({:.1} tok/s)\nids: {:?}",
-            out.len(),
-            dt.as_secs_f32(),
-            out.len() as f32 / dt.as_secs_f32(),
-            out
+            "[llm-spike] {:.1}s\n  entrée : {raw}\n  sortie : {cleaned}",
+            t0.elapsed().as_secs_f32()
         );
-        assert!(!out.is_empty(), "aucun token généré");
+        assert!(!cleaned.is_empty(), "sortie vide");
     }
 }
