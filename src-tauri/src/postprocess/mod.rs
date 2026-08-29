@@ -14,7 +14,7 @@ pub mod cleanup;
 pub mod command_mode;
 pub mod llm;
 
-use llm::LlmEngine;
+use llm::{GenParams, LlmEngine};
 
 /// Interface commune de nettoyage du texte transcrit.
 pub trait TextCleaner: Send + Sync {
@@ -40,15 +40,12 @@ impl TextCleaner for RuleCleaner {
 /// renvoie du vide, on garde le résultat « règles seules ».
 pub struct LlmCleaner {
     engine: LlmEngine,
-    max_new_tokens: usize,
+    params: GenParams,
 }
 
 impl LlmCleaner {
-    pub fn new(engine: LlmEngine, max_new_tokens: usize) -> Self {
-        Self {
-            engine,
-            max_new_tokens,
-        }
+    pub fn new(engine: LlmEngine, params: GenParams) -> Self {
+        Self { engine, params }
     }
 }
 
@@ -58,7 +55,7 @@ impl TextCleaner for LlmCleaner {
         if rules_only.is_empty() {
             return rules_only;
         }
-        match self.engine.clean(&rules_only, self.max_new_tokens) {
+        match self.engine.clean(&rules_only, &self.params) {
             Ok(llm_out) if !llm_out.trim().is_empty() => cleanup::clean(&llm_out, &[]),
             Ok(_) => {
                 eprintln!("[postprocess] LLM a renvoyé du vide, repli sur les règles");

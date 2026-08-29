@@ -178,7 +178,10 @@ pub fn run() {
                 match postprocess::llm::LlmEngine::load(app.handle()) {
                     Ok(engine) => {
                         println!("[postprocess] nettoyage LLM local activé");
-                        Box::new(postprocess::LlmCleaner::new(engine, 256))
+                        Box::new(postprocess::LlmCleaner::new(
+                            engine,
+                            postprocess::llm::GenParams::default(),
+                        ))
                     }
                     Err(e) => {
                         eprintln!("[postprocess] LLM demandé mais indisponible ({e}) — repli sur les règles");
