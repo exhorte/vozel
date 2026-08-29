@@ -75,6 +75,16 @@ pub async fn get_settings(app: AppHandle) -> Settings {
     })
 }
 
+/// Indique si le modèle LLM local (~1,9 Go, non commité) est présent dans
+/// `models/llm/`. Lecture seule — la fenêtre de réglages (Spec_Frontend.md
+/// §2.4) s'en sert pour signaler un switch « nettoyage IA » actif alors
+/// qu'aucun modèle n'est installé (sinon repli silencieux sur les règles).
+/// Ne charge pas le modèle : simple test d'existence des fichiers.
+#[tauri::command]
+pub fn llm_model_available(app: AppHandle) -> bool {
+    crate::postprocess::llm::model_present(&app)
+}
+
 /// Sauvegarde les réglages modifiés par l'utilisateur dans SQLite
 /// (Spec_Backend_Desktop.md §2.1).
 /// Note : ne réapplique pas à chaud un raccourci clavier modifié (le hotkey

@@ -22,6 +22,15 @@ export async function saveSettings(settings: Settings): Promise<void> {
   return invoke("save_settings", { settings });
 }
 
+// Le modèle LLM local (~1,9 Go, non commité) est-il présent dans
+// `models/llm/` du répertoire de données de l'app ? Utilisé par ModelPanel
+// (Spec_Frontend.md §2.4) pour signaler un switch « nettoyage IA » actif
+// sans modèle installé — le backend retombe alors silencieusement sur les
+// règles. Simple test d'existence côté Rust, ne charge pas le modèle.
+export async function llmModelAvailable(): Promise<boolean> {
+  return invoke("llm_model_available");
+}
+
 // --- Dictionnaire personnalisé (Spec_Backend_Desktop.md §2.2, commandes
 // `dict_*`). Le backend normalise `from`/`to` (trim + espaces), refuse un
 // `from` vide ou en doublon, et renvoie un message d'erreur explicite. ---

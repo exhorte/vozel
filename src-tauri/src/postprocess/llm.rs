@@ -40,6 +40,21 @@ fn model_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(base.join("models").join("llm"))
 }
 
+/// Les fichiers indispensables au chargement d'un export LLM (voir
+/// `LlmEngine::load_from_dir`) sont-ils présents dans `models/llm/` ? Simple
+/// test d'existence, **sans charger le modèle** (~1,9 Go) : sert à la
+/// commande `llm_model_available` pour que la fenêtre de réglages signale un
+/// switch « nettoyage IA » actif alors qu'aucun modèle n'est installé (repli
+/// silencieux sur les règles sinon — Spec_Frontend.md §2.4 point 4).
+pub fn model_present(app: &AppHandle) -> bool {
+    let Ok(dir) = model_dir(app) else {
+        return false;
+    };
+    ["model.onnx", "config.json", "tokenizer.json"]
+        .iter()
+        .all(|name| dir.join(name).is_file())
+}
+
 /// Géométrie du transformeur + tokens de fin, lues depuis `config.json` /
 /// `generation_config.json` de l'export.
 #[derive(Debug, Clone)]

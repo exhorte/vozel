@@ -73,6 +73,7 @@ pub fn run() {
             commands::stop_dictation,
             commands::get_settings,
             commands::save_settings,
+            commands::llm_model_available,
             commands::dict_list,
             commands::dict_create,
             commands::dict_update,

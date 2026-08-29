@@ -1,8 +1,8 @@
 // Réglages : moteur ASR local (§1.2), raccourci clavier global (§1.2),
-// et — quand le cloud est activé — fournisseur cloud + clé API + avertissement
-// confidentialité (§2.3). Toute modification appelle `saveSettings`
-// immédiatement, persisté en SQLite côté backend
-// (`src-tauri/src/storage/settings.rs`, Spec_Backend_Desktop.md §2.1).
+// — quand le cloud est activé — fournisseur cloud + clé API + avertissement
+// confidentialité (§2.3), et switch « nettoyage IA local » (§2.4). Toute
+// modification appelle `saveSettings` immédiatement, persisté en SQLite côté
+// backend (`src-tauri/src/storage/settings.rs`, Spec_Backend_Desktop.md §2.1).
 //
 // Layout (§1.3) : groupes de réglages séparés par un `Separator` ; les
 // options techniques portent un `Tooltip` explicatif. La bascule local/cloud
@@ -40,7 +40,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
-import { getSettings, saveSettings } from "@/lib/tauri";
+import { getSettings, llmModelAvailable, saveSettings } from "@/lib/tauri";
 import type { HotkeyMode, Settings } from "@/types";
 
 // Fournisseurs ASR cloud. Seul Groq est branché côté backend
@@ -171,6 +171,10 @@ export function ModelPanel() {
   const [recording, setRecording] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // `null` tant que la vérification n'a pas répondu — on n'affiche l'alerte
+  // « modèle introuvable » qu'une fois `false` confirmé (pas pendant le
+  // chargement, pour éviter un clignotement).
+  const [llmModelPresent, setLlmModelPresent] = useState<boolean | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -180,6 +184,15 @@ export function ModelPanel() {
       })
       .catch((e) => {
         if (!cancelled) setLoadError(String(e));
+      });
+    llmModelAvailable()
+      .then((present) => {
+        if (!cancelled) setLlmModelPresent(present);
+      })
+      .catch(() => {
+        // Pas bloquant : en cas d'échec on n'affiche simplement pas
+        // l'indication de présence du modèle.
+        if (!cancelled) setLlmModelPresent(null);
       });
     return () => {
       cancelled = true;
@@ -338,6 +351,48 @@ export function ModelPanel() {
               </div>
             </div>
           )}
+
+          <Separator />
+
+          {/* Nettoyage IA local (§2.4) — même pattern visuel que la bascule
+              cloud ci-dessus. Différence clé : le modèle LLM n'est chargé
+              qu'au démarrage (`CleanerState` dans `lib.rs::run().setup()`),
+              donc le changement ne prend PAS effet à chaud (note discrète
+              sous le switch, pas une Alert destructive). */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
+                <FieldLabel
+                  htmlFor="llm-cleanup-enabled"
+                  tooltip="Un petit modèle de langue tourne 100 % en local pour corriger ponctuation, accents et accords au-delà des règles simples. Le modèle (~1,9 Go) n'est pas fourni avec l'app : à placer manuellement dans %APPDATA%\com.exponentvalue.vozel\models\llm\ (procédure dans la doc du projet, PROGRESS.md)."
+                >
+                  Nettoyage IA local
+                </FieldLabel>
+                <p className="text-sm text-muted-foreground">
+                  Correction avancée par un modèle de langue local, en plus
+                  des règles. Désactivé par défaut, 100&nbsp;% hors ligne.
+                </p>
+              </div>
+              <Switch
+                id="llm-cleanup-enabled"
+                checked={settings.llm_cleanup_enabled}
+                onCheckedChange={(checked) =>
+                  persist({ ...settings, llm_cleanup_enabled: checked })
+                }
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Ce changement ne prend effet qu'au redémarrage de l'app — le
+              modèle n'est chargé qu'au démarrage.
+            </p>
+            {settings.llm_cleanup_enabled && llmModelPresent === false && (
+              <p className="text-sm text-destructive">
+                Modèle introuvable dans <code>models\llm\</code>. Le nettoyage
+                retombe sur les règles simples tant que le modèle n'est pas
+                installé à cet emplacement.
+              </p>
+            )}
+          </div>
 
           <Separator />
 
