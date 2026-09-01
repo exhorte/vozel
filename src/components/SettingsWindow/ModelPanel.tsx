@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -44,16 +45,15 @@ import { Input } from "@/components/ui/input";
 import { getSettings, llmModelAvailable, saveSettings } from "@/lib/tauri";
 import type { HotkeyMode, Settings } from "@/types";
 
-// Fournisseurs ASR cloud. Seul Groq est branché côté backend
-// (`asr::cloud`, Spec_Backend_Desktop.md §2.4) ; OpenAI/Deepgram sont
-// affichés mais désactivés (« bientôt »), même traitement que `whisper-cpp`
-// dans le sélecteur de moteur local. Écart assumé vs le `combobox` de la
-// spec §2.3 : un `Select` avec options désactivées suffit pour 3 entrées et
-// reste cohérent avec le reste du panneau (voir PROGRESS.md).
-const CLOUD_PROVIDERS: Array<{ value: string; label: string; disabled?: boolean }> = [
-  { value: "groq", label: "Groq (Whisper large v3 turbo)" },
-  { value: "openai", label: "OpenAI (bientôt)", disabled: true },
-  { value: "deepgram", label: "Deepgram (bientôt)", disabled: true },
+// Fournisseurs ASR cloud, tous branchés côté backend (`asr::cloud`,
+// Spec_Backend_Desktop.md §2.4 + §2.4.3 : Groq, OpenAI, Deepgram). Affichés
+// dans un `Combobox` shadcn (`command` + `popover`) conformément à
+// Spec_Frontend.md §2.3 — le `Select` précédent (avec OpenAI/Deepgram
+// désactivés) datait d'avant l'implémentation des deux autres fournisseurs.
+const CLOUD_PROVIDERS: ComboboxOption[] = [
+  { value: "groq", label: "Groq — Whisper large v3 turbo" },
+  { value: "openai", label: "OpenAI — Whisper-1" },
+  { value: "deepgram", label: "Deepgram — Nova-2" },
 ];
 
 // Moteurs ASR locaux connus. `whisper-cpp` reste désactivé dans le
@@ -314,23 +314,17 @@ export function ModelPanel() {
 
               <div className="flex flex-col gap-2">
                 <Label htmlFor="cloud-provider">Fournisseur</Label>
-                <Select
+                <Combobox
+                  id="cloud-provider"
+                  options={CLOUD_PROVIDERS}
                   value={settings.cloud_provider}
                   onValueChange={(value) =>
                     persist({ ...settings, cloud_provider: value })
                   }
-                >
-                  <SelectTrigger id="cloud-provider" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CLOUD_PROVIDERS.map((p) => (
-                      <SelectItem key={p.value} value={p.value} disabled={p.disabled}>
-                        {p.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  placeholder="Choisir un fournisseur"
+                  searchPlaceholder="Filtrer les fournisseurs…"
+                  emptyText="Aucun fournisseur."
+                />
               </div>
 
               <div className="flex flex-col gap-2">
