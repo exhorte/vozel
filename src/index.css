@@ -161,6 +161,216 @@ body,
 }
 
 /* ---------------------------------------------------------------------------
+   App shell de la fenêtre `main` (Réglages) — barre de titre custom +
+   sidebar repliable, inspiré de Wispr Flow. Couleurs choisies par
+   l'utilisateur : #3B3C3F (sidebar + barre de titre + bordures),
+   #DADADD (fond de la zone de contenu).
+   Portée limitée à `.app-shell` : n'affecte ni l'`overlay` ni la palette
+   Command Mode.
+   --------------------------------------------------------------------------- */
+.app-shell {
+  --vz-chrome: #3b3c3f;          /* sidebar + barre de titre + bordures */
+  --vz-chrome-border: rgba(255, 255, 255, 0.09);
+  --vz-chrome-fg: #ededee;       /* texte/icônes sur le chrome sombre */
+  --vz-chrome-fg-muted: #9a9ca1;
+  --vz-chrome-hover: rgba(255, 255, 255, 0.06);
+  --vz-chrome-active: rgba(255, 255, 255, 0.11);
+  --vz-surface: #dadadd;         /* fond de la zone de contenu */
+
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--vz-chrome);
+  color: var(--vz-chrome-fg);
+  border: 1px solid var(--vz-chrome);
+  overflow: hidden;
+}
+
+/* Barre de titre custom (decorations:false sur la fenêtre `main`). */
+.vz-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 40px;
+  padding: 0 8px 0 10px;
+  background: var(--vz-chrome);
+  border-bottom: 1px solid var(--vz-chrome-border);
+  flex: 0 0 auto;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.vz-titlebar__drag {
+  flex: 1 1 auto;
+  align-self: stretch;
+}
+.vz-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  color: var(--vz-chrome-fg-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.vz-iconbtn:hover {
+  background: var(--vz-chrome-hover);
+  color: var(--vz-chrome-fg);
+}
+.vz-iconbtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.vz-iconbtn--close:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+.vz-iconbtn--win {
+  width: 34px;
+  border-radius: 0;
+}
+
+/* Corps : sidebar + page. */
+.vz-shell-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.vz-sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 232px;
+  flex: 0 0 auto;
+  background: var(--vz-chrome);
+  border-right: 1px solid var(--vz-chrome-border);
+  padding: 10px 10px 12px;
+  transition: width 0.16s ease;
+  overflow: hidden;
+}
+.vz-sidebar[data-collapsed="true"] {
+  width: 58px;
+  padding-left: 8px;
+  padding-right: 8px;
+  align-items: center;
+}
+
+.vz-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 34px;
+  padding: 0 6px;
+  margin-bottom: 10px;
+  color: var(--vz-chrome-fg);
+  font-weight: 600;
+  font-size: 15px;
+  white-space: nowrap;
+}
+.vz-sidebar[data-collapsed="true"] .vz-brand {
+  padding: 0;
+  justify-content: center;
+}
+
+.vz-navgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.vz-navspacer {
+  flex: 1 1 auto;
+  min-height: 12px;
+}
+.vz-navsep {
+  height: 1px;
+  background: var(--vz-chrome-border);
+  margin: 8px 4px;
+}
+
+.vz-navitem {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  height: 36px;
+  padding: 0 9px;
+  border-radius: 8px;
+  color: var(--vz-chrome-fg-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-size: 13.5px;
+  white-space: nowrap;
+  text-align: left;
+  width: 100%;
+  transition: background 0.12s, color 0.12s;
+}
+.vz-navitem > svg {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+}
+.vz-navitem__label {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vz-navitem:hover:not([aria-disabled="true"]) {
+  background: var(--vz-chrome-hover);
+  color: var(--vz-chrome-fg);
+}
+.vz-navitem[aria-current="page"] {
+  background: var(--vz-chrome-active);
+  color: #fff;
+}
+.vz-navitem[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.55;
+}
+.vz-navitem__soon {
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--vz-chrome-fg-muted);
+  border: 1px solid var(--vz-chrome-border);
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+.vz-sidebar[data-collapsed="true"] .vz-navitem {
+  justify-content: center;
+  padding: 0;
+  width: 38px;
+  gap: 0;
+}
+.vz-sidebar[data-collapsed="true"] .vz-navitem__label,
+.vz-sidebar[data-collapsed="true"] .vz-navitem__soon {
+  display: none;
+}
+
+.vz-version {
+  color: var(--vz-chrome-fg-muted);
+  font-size: 11px;
+  padding: 8px 6px 0;
+  white-space: nowrap;
+}
+.vz-sidebar[data-collapsed="true"] .vz-version {
+  display: none;
+}
+
+/* Zone de contenu (page active). */
+.vz-page {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--vz-surface);
+  color: var(--foreground);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------------------------------------------------------------------------
    Flow bar (fenêtre `overlay` / widget flottant)
    **4 points seuls** — pas de pastille/conteneur, pas de fond derrière les
    points (demande utilisateur : supprimer le container et son arrière-plan).
