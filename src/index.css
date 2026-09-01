@@ -128,3 +128,85 @@
     @apply font-sans;
     }
 }
+
+/* ---------------------------------------------------------------------------
+   Flow bar (fenêtre `overlay` / widget flottant)
+   4 points, fond gris clair translucide, bordure noire (voir
+   screenchot/flow bar.png). Positionnée en bas-centre de l'écran par
+   `FloatingWidget` (setPosition au montage). Le fond du document est rendu
+   transparent côté JS pour cette fenêtre.
+   NB : la transparence réelle de la fenêtre dépend d'un bug amont Tauri 2 sur
+   Windows (voir PROGRESS.md « Tests manuels restants ») — le rendu du contenu
+   ci-dessous est correct indépendamment de ce bug.
+   --------------------------------------------------------------------------- */
+.flow-bar-root {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: flex-end;      /* tout en bas */
+  justify-content: center;    /* centré horizontalement */
+  padding-bottom: 6px;
+  background: transparent;
+}
+
+.flow-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 16px;
+  border-radius: 9999px;
+  background: rgba(200, 200, 200, 0.32);        /* gris clair translucide */
+  border: 1px solid rgba(0, 0, 0, 0.55);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.flow-bar[data-status="processing"] {
+  cursor: default;
+}
+
+.flow-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: rgba(225, 225, 225, 0.45);        /* remplissage transparent gris clair */
+  border: 2px solid #000;                        /* bordure noire */
+  flex: 0 0 auto;
+  transform: translateY(0) scale(1);
+}
+
+/* Enregistrement : vibration en vague (déphasage par point via
+   `animation-delay` inline). Amplitude modulée par le niveau audio réel
+   (`--level`, 0→1, poussé par `audio_level` du backend) au-dessus d'un
+   plancher pour que ça bouge même en silence. */
+.flow-bar[data-recording="true"] .flow-dot {
+  animation: flow-vibe 0.55s ease-in-out infinite;
+}
+@keyframes flow-vibe {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% {
+    transform: translateY(calc(-3px - var(--level, 0) * 6px))
+               scale(calc(1 + var(--level, 0) * 0.18));
+  }
+}
+
+/* Traitement : pulsation lente synchronisée (retour visuel « pipeline en
+   cours »), pas la vibration d'enregistrement. */
+.flow-bar[data-status="processing"] .flow-dot {
+  animation: flow-pulse 1.1s ease-in-out infinite;
+}
+@keyframes flow-pulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 1; }
+}
+
+/* Repos (idle) et erreur : points immobiles. Erreur = anneau rouge. */
+.flow-bar[data-status="error"] .flow-dot {
+  border-color: #b00020;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flow-bar .flow-dot { animation: none !important; }
+}

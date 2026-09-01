@@ -5,6 +5,7 @@
   "windows": ["main", "overlay", "command"],
   "permissions": [
     "core:default",
+    "core:window:allow-set-position",
     "opener:default"
   ]
 }
