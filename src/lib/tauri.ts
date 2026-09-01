@@ -4,7 +4,13 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { DictationStatus, DictionaryEntry, Settings } from "../types";
+import type {
+  CommandModeContext,
+  DictationStatus,
+  DictionaryEntry,
+  Reformulation,
+  Settings,
+} from "../types";
 
 export async function startDictation(): Promise<void> {
   return invoke("start_dictation");
@@ -29,6 +35,43 @@ export async function saveSettings(settings: Settings): Promise<void> {
 // règles. Simple test d'existence côté Rust, ne charge pas le modèle.
 export async function llmModelAvailable(): Promise<boolean> {
   return invoke("llm_model_available");
+}
+
+// --- Command Mode (Spec_Frontend.md §2.2). La palette vit dans la fenêtre
+// Tauri `command`, affichée par le backend sur appui du raccourci dédié
+// (`Settings::command_mode_hotkey`) après capture de la sélection courante.
+// Aucun de ces appels ne manipule la fenêtre directement : `run`/`close`
+// laissent le backend cacher la fenêtre et rendre le focus à l'app d'origine.
+
+/** Sélection capturée + disponibilité du modèle, lues à l'ouverture de la
+ *  palette (au montage et à chaque événement `command_palette_opened`). */
+export async function commandModeContext(): Promise<CommandModeContext> {
+  return invoke("command_mode_context");
+}
+
+/** Catalogue fixe de reformulations proposées dans la palette. */
+export async function commandModeReformulations(): Promise<Reformulation[]> {
+  return invoke("command_mode_reformulations");
+}
+
+/** Applique la reformulation `id` à la sélection en attente via le LLM local,
+ *  puis colle le résultat par-dessus la sélection dans l'app d'origine.
+ *  Retourne le texte reformulé. Peut être long (~10-40 s sur le modèle int4). */
+export async function runCommandMode(reformulationId: string): Promise<string> {
+  return invoke("run_command_mode", { reformulationId });
+}
+
+/** Ferme la palette sans rien appliquer (Échap). */
+export async function closeCommandPalette(): Promise<void> {
+  return invoke("close_command_palette");
+}
+
+/** L'ouverture de la palette par le backend (après capture de la sélection).
+ *  Le payload est le texte sélectionné. Retourne une fonction de désabonnement. */
+export async function listenCommandPaletteOpened(
+  onOpen: (selectedText: string) => void,
+): Promise<() => void> {
+  return listen<string>("command_palette_opened", (event) => onOpen(event.payload));
 }
 
 // --- Dictionnaire personnalisé (Spec_Backend_Desktop.md §2.2, commandes

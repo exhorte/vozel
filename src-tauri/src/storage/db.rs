@@ -92,7 +92,7 @@ mod tests {
             .expect("liste des tables");
             assert_eq!(tables, vec!["dictionary".to_string(), "settings".to_string()]);
 
-            // Colonnes de `settings` conformes au struct Rust (0001..0004).
+            // Colonnes de `settings` conformes au struct Rust (0001..0005).
             let cols: Vec<String> =
                 sqlx::query_scalar("SELECT name FROM pragma_table_info('settings') ORDER BY name")
                     .fetch_all(&pool)
@@ -105,6 +105,8 @@ mod tests {
                     "cloud_api_key".to_string(),
                     "cloud_enabled".to_string(),
                     "cloud_provider".to_string(),
+                    "command_mode_enabled".to_string(),
+                    "command_mode_hotkey".to_string(),
                     "ctrl_win_ptt_enabled".to_string(),
                     "hotkey".to_string(),
                     "hotkey_mode".to_string(),

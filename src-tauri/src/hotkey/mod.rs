@@ -56,17 +56,61 @@ impl HotkeyManager {
         mode: HotkeyMode,
         capture_tx: Sender<CaptureCommand>,
         listening: Arc<AtomicBool>,
+        command_mode_hotkey: Option<&str>,
     ) -> Result<(), String> {
         let manager = GlobalHotKeyManager::new().map_err(|e| e.to_string())?;
         let hotkey: HotKey = hotkey_str
             .parse()
             .map_err(|e| format!("raccourci invalide '{hotkey_str}' : {e}"))?;
         manager.register(hotkey).map_err(|e| e.to_string())?;
+
+        // Command Mode (Spec_Frontend.md §2.2) : un second raccourci global,
+        // enregistré sur le **même** `GlobalHotKeyManager` et démultiplexé par
+        // `event.id()` dans la boucle ci-dessous. `GlobalHotKeyEvent::receiver()`
+        // est un singleton global — un second thread consommateur volerait des
+        // événements au premier ; tout doit passer par une seule boucle.
+        //
+        // **Non fatal** : un raccourci Command Mode invalide ou déjà pris par
+        // une autre app ne doit pas empêcher l'enregistrement du raccourci de
+        // dictée (cas recouvrable, à surfacer dans les réglages — même
+        // philosophie que l'échec du raccourci principal, géré dans `lib.rs`).
+        let command_hotkey_id: Option<u32> = command_mode_hotkey.and_then(|s| {
+            match s.parse::<HotKey>() {
+                Ok(hk) => match manager.register(hk) {
+                    Ok(()) => {
+                        println!("[hotkey] Command Mode : raccourci '{s}' enregistré");
+                        Some(hk.id())
+                    }
+                    Err(e) => {
+                        eprintln!("[hotkey] raccourci Command Mode '{s}' non enregistré ({e}) — Command Mode inactif");
+                        None
+                    }
+                },
+                Err(e) => {
+                    eprintln!("[hotkey] raccourci Command Mode '{s}' invalide ({e}) — Command Mode inactif");
+                    None
+                }
+            }
+        });
+
         Box::leak(Box::new(manager));
 
+        let dictation_hotkey_id = hotkey.id();
         let receiver = GlobalHotKeyEvent::receiver();
         std::thread::spawn(move || {
             while let Ok(event) = receiver.recv() {
+                // Command Mode : sur appui du raccourci dédié, on capture la
+                // sélection courante et on ouvre la palette (fenêtre `command`).
+                // Le relâchement n'a pas de sémantique ici (pas de push-to-talk).
+                if Some(event.id()) == command_hotkey_id {
+                    if event.state() == HotKeyState::Pressed {
+                        crate::commands::open_command_palette(&app);
+                    }
+                    continue;
+                }
+                if event.id() != dictation_hotkey_id {
+                    continue;
+                }
                 // État courant lu depuis le drapeau partagé, pas depuis un
                 // compteur local : si la dictée a été démarrée/arrêtée depuis
                 // l'UI, le mode `Toggle` doit en tenir compte (sinon il faut

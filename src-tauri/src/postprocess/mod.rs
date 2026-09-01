@@ -14,6 +14,8 @@ pub mod cleanup;
 pub mod command_mode;
 pub mod llm;
 
+use std::sync::Arc;
+
 use llm::{GenParams, LlmEngine};
 
 /// Interface commune de nettoyage du texte transcrit.
@@ -39,12 +41,14 @@ impl TextCleaner for RuleCleaner {
 /// finale même si le LLM les a manquées). Si le LLM lève une erreur ou
 /// renvoie du vide, on garde le résultat « règles seules ».
 pub struct LlmCleaner {
-    engine: LlmEngine,
+    /// Partagé (via `Arc`) avec `CommandModeState` quand le Command Mode est
+    /// aussi actif — le modèle n'est chargé qu'une fois (voir `lib.rs`).
+    engine: Arc<LlmEngine>,
     params: GenParams,
 }
 
 impl LlmCleaner {
-    pub fn new(engine: LlmEngine, params: GenParams) -> Self {
+    pub fn new(engine: Arc<LlmEngine>, params: GenParams) -> Self {
         Self { engine, params }
     }
 }

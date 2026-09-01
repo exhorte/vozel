@@ -17,6 +17,27 @@ export interface Settings {
   /** Push-to-talk sur le maintien de Ctrl+Win seul (§2.5). Opt-in (hook
    *  clavier bas niveau) ; effet au redémarrage. */
   ctrl_win_ptt_enabled: boolean;
+  /** Command Mode (§2.2) : palette de reformulation d'une sélection,
+   *  déclenchée par `command_mode_hotkey`. Opt-in ; effet au redémarrage. */
+  command_mode_enabled: boolean;
+  /** Raccourci global dédié au Command Mode (syntaxe
+   *  `global_hotkey::hotkey::HotKey`, comme `hotkey`). */
+  command_mode_hotkey: string;
+}
+
+// Miroir de src-tauri/src/postprocess/command_mode.rs::Reformulation.
+// `id` : stable ; `label` : affiché dans la palette ; `instruction` : consigne
+// envoyée au LLM (le frontend renvoie l'`id`, pas l'instruction).
+export interface Reformulation {
+  id: string;
+  label: string;
+  instruction: string;
+}
+
+// Retour de la commande `command_mode_context`.
+export interface CommandModeContext {
+  selected_text: string;
+  model_available: boolean;
 }
 
 export interface TranscriptionResult {

@@ -170,6 +170,9 @@ function FieldLabel({
 export function ModelPanel() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [recording, setRecording] = useState(false);
+  // Enregistrement du raccourci Command Mode (§2.2) — même mécanique que le
+  // raccourci de dictée, champ distinct.
+  const [recordingCommand, setRecordingCommand] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   // `null` tant que la vérification n'a pas répondu — on n'affiche l'alerte
@@ -495,6 +498,84 @@ export function ModelPanel() {
             <p className="text-xs text-muted-foreground">
               Ce changement ne prend effet qu'au redémarrage de l'app.
             </p>
+          </div>
+
+          <Separator />
+
+          {/* Command Mode (§2.2) : palette de reformulation d'une sélection,
+              déclenchée par un raccourci global dédié. Opt-in (raccourci
+              enregistré et modèle LLM chargé pour cet usage seulement si
+              activé), effet au redémarrage — même famille que le cloud, le LLM
+              de nettoyage et le push-to-talk Ctrl+Win. Nécessite le même
+              modèle LLM local que le nettoyage IA (~1,9 Go, models\llm\). */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-0.5">
+                <FieldLabel
+                  htmlFor="command-mode-enabled"
+                  tooltip="Sélectionnez du texte dans n'importe quelle app, appuyez sur le raccourci Command Mode : une palette propose des reformulations rapides (plus concis, plus pro, en liste…). Le texte reformulé remplace la sélection. 100 % local — utilise le même modèle que le nettoyage IA (à placer dans %APPDATA%\com.exponentvalue.vozel\models\llm\)."
+                >
+                  Command Mode
+                </FieldLabel>
+                <p className="text-sm text-muted-foreground">
+                  Palette de reformulation d'une sélection via un raccourci
+                  dédié. Désactivé par défaut, 100&nbsp;% hors ligne.
+                </p>
+              </div>
+              <Switch
+                id="command-mode-enabled"
+                checked={settings.command_mode_enabled}
+                onCheckedChange={(checked) =>
+                  persist({ ...settings, command_mode_enabled: checked })
+                }
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Ce changement ne prend effet qu'au redémarrage de l'app.
+            </p>
+            {settings.command_mode_enabled && llmModelPresent === false && (
+              <p className="text-sm text-destructive">
+                Modèle introuvable dans <code>models\llm\</code> — le Command
+                Mode a besoin de ce modèle pour reformuler.
+              </p>
+            )}
+            {settings.command_mode_enabled && (
+              <div className="mt-1 flex flex-col gap-2">
+                <Label htmlFor="command-hotkey-input">
+                  Raccourci Command Mode
+                </Label>
+                <Input
+                  id="command-hotkey-input"
+                  readOnly
+                  value={
+                    recordingCommand
+                      ? "Appuyez sur une combinaison…"
+                      : settings.command_mode_hotkey
+                  }
+                  placeholder="Cliquez puis appuyez sur une combinaison"
+                  onFocus={() => setRecordingCommand(true)}
+                  onBlur={() => setRecordingCommand(false)}
+                  onKeyDown={(event) => {
+                    event.preventDefault();
+                    if (event.code === "Escape") {
+                      setRecordingCommand(false);
+                      event.currentTarget.blur();
+                      return;
+                    }
+                    const next = hotkeyFromEvent(event);
+                    if (next) {
+                      setRecordingCommand(false);
+                      event.currentTarget.blur();
+                      persist({ ...settings, command_mode_hotkey: next });
+                    }
+                  }}
+                />
+                <p className="text-sm text-muted-foreground">
+                  Distinct du raccourci de dictée. Au moins un modificateur ;
+                  Échap pour annuler. Effet au redémarrage.
+                </p>
+              </div>
+            )}
           </div>
 
           {saveError && (

@@ -38,6 +38,15 @@ pub struct Settings {
     /// (`hotkey::modifier_combo`) au démarrage seulement si vrai ; un
     /// changement prend effet au redémarrage de l'app.
     pub ctrl_win_ptt_enabled: bool,
+    /// Command Mode (Spec_Frontend.md §2.2) : palette de reformulation d'une
+    /// sélection, déclenchée par `command_mode_hotkey`. Opt-in, désactivé par
+    /// défaut : le raccourci dédié n'est enregistré et le modèle LLM n'est
+    /// chargé pour cet usage qu'au démarrage si vrai ; effet au redémarrage.
+    pub command_mode_enabled: bool,
+    /// Raccourci global dédié au Command Mode (syntaxe
+    /// `global_hotkey::hotkey::HotKey`, comme `hotkey`). Distinct du raccourci
+    /// de dictée pour un déclenchement explicite et non ambigu.
+    pub command_mode_hotkey: String,
 }
 
 // `Debug` manuel : la clé API ne doit jamais apparaître dans un log, un
@@ -60,6 +69,8 @@ impl fmt::Debug for Settings {
             )
             .field("llm_cleanup_enabled", &self.llm_cleanup_enabled)
             .field("ctrl_win_ptt_enabled", &self.ctrl_win_ptt_enabled)
+            .field("command_mode_enabled", &self.command_mode_enabled)
+            .field("command_mode_hotkey", &self.command_mode_hotkey)
             .finish()
     }
 }
@@ -90,6 +101,15 @@ impl Default for Settings {
             cloud_api_key: String::new(),
             llm_cleanup_enabled: false,
             ctrl_win_ptt_enabled: false,
+            command_mode_enabled: false,
+            // Raccourci dédié au Command Mode, distinct du raccourci de dictée
+            // (`control+shift+Space`). `alt+shift+KeyC` retenu par défaut :
+            // `control+shift+KeyK` (essayé d'abord) est déjà pris globalement
+            // sur la machine de dev — même situation que `control+alt+Space`
+            // pour la dictée en Session 2. `alt+shift+*` est moins contesté et
+            // évite Ctrl+Alt (= AltGr sur beaucoup de claviers). Modifiable
+            // dans les réglages — effet au redémarrage.
+            command_mode_hotkey: "alt+shift+KeyC".into(),
         }
     }
 }
@@ -119,7 +139,7 @@ impl Settings {
     pub async fn load_db(pool: &SqlitePool) -> Result<Self, String> {
         let row = sqlx::query(
             "SELECT asr_provider, hotkey, hotkey_mode, cloud_enabled, cloud_provider, cloud_api_key,
-                    llm_cleanup_enabled, ctrl_win_ptt_enabled
+                    llm_cleanup_enabled, ctrl_win_ptt_enabled, command_mode_enabled, command_mode_hotkey
              FROM settings WHERE id = 1",
         )
         .fetch_optional(pool)
@@ -136,6 +156,9 @@ impl Settings {
         let ctrl_win_ptt_enabled: i64 = row
             .try_get("ctrl_win_ptt_enabled")
             .map_err(|e| e.to_string())?;
+        let command_mode_enabled: i64 = row
+            .try_get("command_mode_enabled")
+            .map_err(|e| e.to_string())?;
         let hotkey_mode: String = row.try_get("hotkey_mode").map_err(|e| e.to_string())?;
 
         Ok(Self {
@@ -147,6 +170,10 @@ impl Settings {
             cloud_api_key: row.try_get("cloud_api_key").map_err(|e| e.to_string())?,
             llm_cleanup_enabled: llm_cleanup_enabled != 0,
             ctrl_win_ptt_enabled: ctrl_win_ptt_enabled != 0,
+            command_mode_enabled: command_mode_enabled != 0,
+            command_mode_hotkey: row
+                .try_get("command_mode_hotkey")
+                .map_err(|e| e.to_string())?,
         })
     }
 
@@ -155,8 +182,8 @@ impl Settings {
         sqlx::query(
             "INSERT INTO settings
                  (id, asr_provider, hotkey, hotkey_mode, cloud_enabled, cloud_provider, cloud_api_key,
-                  llm_cleanup_enabled, ctrl_win_ptt_enabled)
-             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                  llm_cleanup_enabled, ctrl_win_ptt_enabled, command_mode_enabled, command_mode_hotkey)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(id) DO UPDATE SET
                  asr_provider         = excluded.asr_provider,
                  hotkey               = excluded.hotkey,
@@ -165,7 +192,9 @@ impl Settings {
                  cloud_provider       = excluded.cloud_provider,
                  cloud_api_key        = excluded.cloud_api_key,
                  llm_cleanup_enabled  = excluded.llm_cleanup_enabled,
-                 ctrl_win_ptt_enabled = excluded.ctrl_win_ptt_enabled",
+                 ctrl_win_ptt_enabled = excluded.ctrl_win_ptt_enabled,
+                 command_mode_enabled = excluded.command_mode_enabled,
+                 command_mode_hotkey  = excluded.command_mode_hotkey",
         )
         .bind(&self.asr_provider)
         .bind(&self.hotkey)
@@ -175,6 +204,8 @@ impl Settings {
         .bind(&self.cloud_api_key)
         .bind(self.llm_cleanup_enabled as i64)
         .bind(self.ctrl_win_ptt_enabled as i64)
+        .bind(self.command_mode_enabled as i64)
+        .bind(&self.command_mode_hotkey)
         .execute(pool)
         .await
         .map_err(|e| format!("écriture des réglages : {e}"))?;
@@ -275,6 +306,8 @@ mod tests {
                 cloud_api_key: "sk-test-secret".into(),
                 llm_cleanup_enabled: true,
                 ctrl_win_ptt_enabled: true,
+                command_mode_enabled: true,
+                command_mode_hotkey: "control+alt+KeyR".into(),
             };
             written.save_db(&pool).await.expect("save");
             let reloaded = Settings::load_db(&pool).await.expect("load");
