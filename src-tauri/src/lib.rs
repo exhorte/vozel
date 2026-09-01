@@ -249,7 +249,10 @@ pub fn run() {
             let llm_engine: Option<std::sync::Arc<postprocess::llm::LlmEngine>> =
                 if settings.llm_cleanup_enabled || settings.command_mode_enabled {
                     match postprocess::llm::LlmEngine::load(app.handle()) {
-                        Ok(engine) => Some(std::sync::Arc::new(engine)),
+                        Ok(engine) => {
+                            println!("[postprocess] modèle LLM local chargé une fois (partagé nettoyage §2.3 + Command Mode §2.2)");
+                            Some(std::sync::Arc::new(engine))
+                        }
                         Err(e) => {
                             eprintln!("[postprocess] LLM demandé mais indisponible ({e}) — nettoyage sur règles, Command Mode désactivé");
                             None
