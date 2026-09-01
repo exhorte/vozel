@@ -130,11 +130,43 @@
 }
 
 /* ---------------------------------------------------------------------------
+   Barres de défilement masquées (demande utilisateur) — le défilement à la
+   molette/au trackpad reste fonctionnel, seule la barre disparaît.
+   L'app est une fenêtre de bureau à taille fixe : jamais de défilement du
+   document lui-même, seul le contenu interne (`ScrollArea` des Réglages)
+   défile. On masque à la fois la barre native et celle (fine) de Radix
+   `ScrollArea`.
+   --------------------------------------------------------------------------- */
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+* {
+  scrollbar-width: none;          /* Firefox */
+  -ms-overflow-style: none;       /* anciens Edge/IE */
+}
+*::-webkit-scrollbar {            /* Chromium / WebView2 */
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+/* Barre fine de shadcn/Radix `ScrollArea` — masquée aussi (aucune barre
+   visible souhaitée). Le viewport reste défilable. */
+[data-slot="scroll-area-scrollbar"] {
+  display: none !important;
+}
+
+/* ---------------------------------------------------------------------------
    Flow bar (fenêtre `overlay` / widget flottant)
-   4 points, fond gris clair translucide, bordure noire (voir
-   screenchot/flow bar.png). Positionnée en bas-centre de l'écran par
-   `FloatingWidget` (setPosition au montage). Le fond du document est rendu
-   transparent côté JS pour cette fenêtre.
+   **4 points seuls** — pas de pastille/conteneur, pas de fond derrière les
+   points (demande utilisateur : supprimer le container et son arrière-plan).
+   Positionnée en bas-centre de l'écran par `FloatingWidget` (setPosition au
+   montage). Le fond du document est rendu transparent côté JS pour cette
+   fenêtre.
    NB : la transparence réelle de la fenêtre dépend d'un bug amont Tauri 2 sur
    Windows (voir PROGRESS.md « Tests manuels restants ») — le rendu du contenu
    ci-dessous est correct indépendamment de ce bug.
@@ -149,16 +181,16 @@
   background: transparent;
 }
 
+/* Rangée des points seule : aucun fond, aucune bordure, aucun flou. Un petit
+   padding invisible garde une zone de clic confortable (la rangée déclenche
+   start/stop dictée, cf. Session 7). */
 .flow-bar {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 10px 16px;
-  border-radius: 9999px;
-  background: rgba(200, 200, 200, 0.32);        /* gris clair translucide */
-  border: 1px solid rgba(0, 0, 0, 0.55);
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
+  padding: 4px;
+  background: transparent;
+  border: 0;
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;

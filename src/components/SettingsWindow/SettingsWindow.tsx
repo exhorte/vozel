@@ -18,7 +18,7 @@ import { DictionaryPanel } from "./DictionaryPanel";
 export function SettingsWindow() {
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="settings-window flex h-screen flex-col bg-background text-foreground">
+      <div className="settings-window flex h-screen flex-col overflow-hidden bg-background text-foreground">
         <header className="shrink-0 border-b px-6 py-4">
           <h1 className="text-lg font-semibold leading-none">Réglages</h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -26,7 +26,7 @@ export function SettingsWindow() {
           </p>
         </header>
 
-        <ScrollArea className="flex-1">
+        <ScrollArea className="min-h-0 flex-1">
           <div className="mx-auto flex max-w-2xl flex-col gap-8 p-6">
             <ModelPanel />
             <Separator />
