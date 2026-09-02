@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { HomePage } from "./HomePage";
 import { ModelPanel } from "./ModelPanel";
 import { DictionaryPanel } from "./DictionaryPanel";
 import { TitleBar } from "./TitleBar";
@@ -22,6 +23,7 @@ import { Sidebar, type SettingsPage } from "./Sidebar";
 
 const COLLAPSE_KEY = "vozel:sidebar-collapsed";
 const PAGE_TITLES: Record<SettingsPage, string> = {
+  home: "Accueil",
   dictation: "Dictée",
   dictionary: "Dictionnaire",
 };
@@ -36,7 +38,7 @@ function readCollapsed(): boolean {
 
 export function SettingsWindow() {
   const [collapsed, setCollapsed] = useState(readCollapsed);
-  const [page, setPage] = useState<SettingsPage>("dictation");
+  const [page, setPage] = useState<SettingsPage>("home");
 
   useEffect(() => {
     try {
@@ -65,6 +67,7 @@ export function SettingsWindow() {
             </header>
             <ScrollArea className="min-h-0 flex-1">
               <div className="mx-auto flex max-w-2xl flex-col gap-8 p-8">
+                {page === "home" && <HomePage />}
                 {page === "dictation" && <ModelPanel />}
                 {page === "dictionary" && <DictionaryPanel />}
               </div>

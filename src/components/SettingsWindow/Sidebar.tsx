@@ -15,6 +15,7 @@ import {
   BookText,
   Disc,
   HelpCircle,
+  Home,
   Mic,
   NotebookPen,
   Scissors,
@@ -25,7 +26,7 @@ import {
 } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
 
-export type SettingsPage = "dictation" | "dictionary";
+export type SettingsPage = "home" | "dictation" | "dictionary";
 
 interface NavItem {
   id: string;
@@ -35,6 +36,7 @@ interface NavItem {
 }
 
 const TOP_ITEMS: NavItem[] = [
+  { id: "home", label: "Accueil", icon: Home, page: "home" },
   { id: "dictation", label: "Dictée", icon: Mic, page: "dictation" },
   { id: "notetaker", label: "Prise de notes", icon: Disc },
   { id: "insights", label: "Statistiques", icon: BarChart3 },
