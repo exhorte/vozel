@@ -262,14 +262,39 @@ pub fn run_pipeline(app: &AppHandle) {
 // --- Historique local des dictées (Session 16, pas de section de spec —
 // prompt de reprise + Analyse_Fonctionnalites_WisprFlow_vs_Vozel.md §6). La
 // table est alimentée par `run_pipeline` ci-dessus ; ces commandes servent la
-// page d'accueil (Priorité 2). ---
+// page d'accueil et la page Historique (Session 17). ---
+
+/// Borne commune du `limit` des lectures d'historique.
+fn clamp_history_limit(limit: Option<i64>) -> i64 {
+    limit.unwrap_or(10).clamp(1, 100)
+}
 
 /// Les dernières dictées, plus récentes d'abord (`limit` borné 1..=100,
 /// défaut 10) — fil de la page d'accueil.
 #[tauri::command]
 pub async fn history_list(app: AppHandle, limit: Option<i64>) -> Result<Vec<HistoryEntry>, String> {
     let pool = app.state::<Db>().0.clone();
-    history::list_recent(&pool, limit.unwrap_or(10).clamp(1, 100)).await
+    history::list_recent(&pool, clamp_history_limit(limit)).await
+}
+
+/// Recherche texte (sous-chaîne, insensible à la casse) dans l'historique —
+/// champ de recherche de la page Historique. `query` vide → `history_list`.
+#[tauri::command]
+pub async fn history_search(
+    app: AppHandle,
+    query: String,
+    limit: Option<i64>,
+) -> Result<Vec<HistoryEntry>, String> {
+    let pool = app.state::<Db>().0.clone();
+    history::search(&pool, &query, clamp_history_limit(limit)).await
+}
+
+/// Supprime une dictée par id (menu « ⋮ » d'une ligne de la page Historique,
+/// avec confirmation côté UI).
+#[tauri::command]
+pub async fn history_delete(app: AppHandle, id: i64) -> Result<(), String> {
+    let pool = app.state::<Db>().0.clone();
+    history::delete(&pool, id).await
 }
 
 /// Compteurs jour + semaine (nombre de dictées, total de mots) pour la page

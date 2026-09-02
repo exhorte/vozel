@@ -78,7 +78,9 @@ pub fn run() {
             commands::dict_update,
             commands::dict_delete,
             commands::history_list,
+            commands::history_search,
             commands::history_stats,
+            commands::history_delete,
             commands::history_clear,
         ])
         .setup(|app| {

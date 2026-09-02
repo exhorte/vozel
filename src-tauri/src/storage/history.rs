@@ -8,10 +8,11 @@
 //!
 //! Écrit par `commands::run_pipeline` après une injection réussie
 //! (`record`), lu par la page d'accueil (`list_recent` pour le fil,
-//! `stats_since` pour les compteurs jour/semaine). `clear` vide toute la
-//! table — exposé via la commande IPC `history_clear` : le texte stocké est
-//! celui réellement dicté par l'utilisateur, jamais filtré ni synchronisé,
-//! il doit pouvoir l'effacer lui-même.
+//! `stats_since` pour les compteurs jour/semaine) et par la page Historique
+//! (`search` pour la recherche, `delete` pour une suppression unitaire).
+//! `clear` vide toute la table — exposé via la commande IPC `history_clear` :
+//! le texte stocké est celui réellement dicté par l'utilisateur, jamais
+//! filtré ni synchronisé, il doit pouvoir l'effacer lui-même.
 
 use sqlx::{Row, SqlitePool};
 
@@ -115,8 +116,57 @@ pub async fn stats_since(pool: &SqlitePool, since: &str) -> Result<HistoryStats,
     })
 }
 
-/// Vide toute la table (bouton « Effacer l'historique » de la page
-/// d'accueil, commande IPC `history_clear`).
+/// Recherche texte simple : sous-chaîne insensible à la casse (`LIKE`, qui
+/// l'est déjà par défaut sur l'ASCII dans SQLite), plus récentes d'abord,
+/// `limit` borné comme `list_recent`. `query` vide (après `trim`) →
+/// équivalent à `list_recent`. Les métacaractères `%` / `_` / `\` du motif
+/// sont échappés pour rester littéraux. Pas de FTS5 : à l'échelle d'un
+/// historique personnel, `LIKE` suffit largement.
+pub async fn search(
+    pool: &SqlitePool,
+    query: &str,
+    limit: i64,
+) -> Result<Vec<HistoryEntry>, String> {
+    let q = query.trim();
+    if q.is_empty() {
+        return list_recent(pool, limit).await;
+    }
+    let escaped = q
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    let rows = sqlx::query(
+        "SELECT id, created_at, text, word_count, duration_ms
+         FROM dictation_history
+         WHERE text LIKE '%' || ?1 || '%' ESCAPE '\\'
+         ORDER BY created_at DESC, id DESC
+         LIMIT ?2",
+    )
+    .bind(escaped)
+    .bind(limit.max(0))
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("recherche dans l'historique : {e}"))?;
+    rows.iter().map(row_to_entry).collect()
+}
+
+/// Supprime une dictée par id. Erreur si l'id n'existe pas (même contrat que
+/// `storage::dictionary::delete`).
+pub async fn delete(pool: &SqlitePool, id: i64) -> Result<(), String> {
+    let affected = sqlx::query("DELETE FROM dictation_history WHERE id = ?1")
+        .bind(id)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("suppression d'une dictée : {e}"))?
+        .rows_affected();
+    if affected == 0 {
+        return Err(format!("aucune dictée avec l'id {id}"));
+    }
+    Ok(())
+}
+
+/// Vide toute la table (bouton « Effacer l'historique », commande IPC
+/// `history_clear`).
 pub async fn clear(pool: &SqlitePool) -> Result<(), String> {
     sqlx::query("DELETE FROM dictation_history")
         .execute(pool)
@@ -228,6 +278,68 @@ mod tests {
             assert!(list_recent(&pool, 10).await.unwrap().is_empty());
             // Idempotent sur une table déjà vide.
             clear(&pool).await.expect("clear vide");
+        });
+    }
+
+    #[test]
+    fn delete_removes_one_and_reports_missing_id() {
+        tauri::async_runtime::block_on(async {
+            let pool = memory_pool().await;
+            record(&pool, "à garder", None, 2).await.expect("record 1");
+            record(&pool, "à jeter", None, 2).await.expect("record 2");
+            let all = list_recent(&pool, 10).await.unwrap();
+            let victim = all.iter().find(|e| e.text == "à jeter").unwrap().id;
+
+            delete(&pool, victim).await.expect("delete");
+            let rest = list_recent(&pool, 10).await.unwrap();
+            assert_eq!(rest.len(), 1);
+            assert_eq!(rest[0].text, "à garder");
+
+            assert!(delete(&pool, victim).await.is_err(), "id déjà supprimé");
+            assert!(delete(&pool, 9999).await.is_err(), "id inexistant");
+        });
+    }
+
+    #[test]
+    fn search_is_substring_case_insensitive_recent_first() {
+        tauri::async_runtime::block_on(async {
+            let pool = memory_pool().await;
+            for (created_at, text) in [
+                ("2026-09-01 10:00:00", "La réunion de lundi est annulée"),
+                ("2026-09-02 10:00:00", "Rappel Réunion mardi 14h"),
+                ("2026-09-03 10:00:00", "Acheter du pain"),
+                ("2026-09-04 10:00:00", "Texte avec 50% de marge et un _souligné_"),
+            ] {
+                sqlx::query("INSERT INTO dictation_history (created_at, text, word_count) VALUES (?1, ?2, 3)")
+                    .bind(created_at)
+                    .bind(text)
+                    .execute(&pool)
+                    .await
+                    .expect("insert daté");
+            }
+
+            // Sous-chaîne, insensible à la casse ASCII (« Réunion » ↔ « réunion »),
+            // plus récent d'abord.
+            let hits = search(&pool, "réunion", 10).await.expect("search");
+            assert_eq!(hits.len(), 2);
+            assert_eq!(hits[0].text, "Rappel Réunion mardi 14h");
+            assert_eq!(hits[1].text, "La réunion de lundi est annulée");
+
+            // Aucune correspondance.
+            assert!(search(&pool, "zzz introuvable", 10).await.unwrap().is_empty());
+
+            // Requête vide → comportement de `list_recent`.
+            let empty = search(&pool, "   ", 10).await.unwrap();
+            assert_eq!(empty.len(), 4);
+            assert_eq!(empty[0].text, "Texte avec 50% de marge et un _souligné_");
+
+            // `%` et `_` traités littéralement (pas comme des jokers).
+            assert_eq!(search(&pool, "50%", 10).await.unwrap().len(), 1);
+            assert_eq!(search(&pool, "_souligné_", 10).await.unwrap().len(), 1);
+            assert!(search(&pool, "5_", 10).await.unwrap().is_empty(), "'_' littéral, pas joker");
+
+            // `limit` respecté.
+            assert_eq!(search(&pool, "e", 2).await.unwrap().len(), 2);
         });
     }
 }
