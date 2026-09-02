@@ -1,61 +1,56 @@
-// Barre latérale de la fenêtre Réglages, inspirée de Wispr Flow : liste de
-// navigation icône + libellé, repliable en mode icônes seules.
+// Barre latérale de la fenêtre principale, façon Wispr Flow.
 //
-// Périmètre (décidé avec l'utilisateur) : la nav reprend les 8 sections de
-// Wispr Flow pour la fidélité visuelle, mais seules « Dictée » et
-// « Dictionnaire » sont réelles (elles existent côté Vozel) — les autres
-// sont des entrées désactivées « bientôt », sans destination. Les widgets
-// SaaS de Wispr Flow (compte, équipe, parrainage, essai/upgrade) sont
-// volontairement omis : Vozel est local-first, sans comptes ni facturation.
+// Session 17 — sidebar finale : 4 destinations seulement.
+//   Groupe du haut : Accueil, Dictionnaire, Historique (ordre observé chez
+//   Wispr : Home / Dictionary / History).
+//   Groupe du bas : Réglages — qui n'est plus une page mais **ouvre une
+//   fenêtre modale** (`SettingsModal`). Il garde sa position en bas (choix
+//   explicite de l'utilisateur, volontairement différent du regroupement en
+//   haut chez Wispr).
+//
+// Supprimés en Session 17 (pas de placeholder « bientôt ») : Dictée (son
+// contenu vit désormais dans la modale Réglages), Prise de notes,
+// Statistiques, Snippets, Style, Transformations, Bloc-notes, Aide.
 
 import { useEffect, useState } from "react";
 import {
   AudioLines,
-  BarChart3,
   BookText,
-  Disc,
-  HelpCircle,
+  History,
   Home,
-  Mic,
-  NotebookPen,
-  Scissors,
   Settings,
-  Type,
-  Wand2,
   type LucideIcon,
 } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
 
-export type SettingsPage = "home" | "dictation" | "dictionary";
+export type SettingsPage = "home" | "dictionary" | "history";
 
 interface NavItem {
   id: string;
   label: string;
   icon: LucideIcon;
-  page?: SettingsPage; // absent => pas encore implémenté
+  /** Page routée dans la fenêtre principale. */
+  page?: SettingsPage;
+  /** Superposition (modale) plutôt qu'une page — `"settings"` n'est
+   *  volontairement PAS une valeur de `SettingsPage`. */
+  overlay?: "settings";
 }
 
 const TOP_ITEMS: NavItem[] = [
   { id: "home", label: "Accueil", icon: Home, page: "home" },
-  { id: "dictation", label: "Dictée", icon: Mic, page: "dictation" },
-  { id: "notetaker", label: "Prise de notes", icon: Disc },
-  { id: "insights", label: "Statistiques", icon: BarChart3 },
   { id: "dictionary", label: "Dictionnaire", icon: BookText, page: "dictionary" },
-  { id: "snippets", label: "Snippets", icon: Scissors },
-  { id: "style", label: "Style", icon: Type },
-  { id: "transforms", label: "Transformations", icon: Wand2 },
-  { id: "scratchpad", label: "Bloc-notes", icon: NotebookPen },
+  { id: "history", label: "Historique", icon: History, page: "history" },
 ];
 
 const BOTTOM_ITEMS: NavItem[] = [
-  { id: "settings", label: "Réglages avancés", icon: Settings },
-  { id: "help", label: "Aide", icon: HelpCircle },
+  { id: "settings", label: "Réglages", icon: Settings, overlay: "settings" },
 ];
 
 interface SidebarProps {
   collapsed: boolean;
   active: SettingsPage;
   onNavigate: (page: SettingsPage) => void;
+  onOpenSettings: () => void;
 }
 
 function NavButton({
@@ -63,34 +58,39 @@ function NavButton({
   active,
   collapsed,
   onNavigate,
+  onOpenSettings,
 }: {
   item: NavItem;
   active: SettingsPage;
   collapsed: boolean;
   onNavigate: (page: SettingsPage) => void;
+  onOpenSettings: () => void;
 }) {
   const Icon = item.icon;
-  const disabled = !item.page;
-  const isActive = item.page === active;
+  const isActive = item.page !== undefined && item.page === active;
   return (
     <button
       type="button"
       className="vz-navitem"
       aria-current={isActive ? "page" : undefined}
-      aria-disabled={disabled || undefined}
-      title={collapsed ? item.label + (disabled ? " — bientôt" : "") : undefined}
+      title={collapsed ? item.label : undefined}
       onClick={() => {
-        if (item.page) onNavigate(item.page);
+        if (item.overlay === "settings") onOpenSettings();
+        else if (item.page) onNavigate(item.page);
       }}
     >
       <Icon />
       <span className="vz-navitem__label">{item.label}</span>
-      {disabled && !collapsed && <span className="vz-navitem__soon">bientôt</span>}
     </button>
   );
 }
 
-export function Sidebar({ collapsed, active, onNavigate }: SidebarProps) {
+export function Sidebar({
+  collapsed,
+  active,
+  onNavigate,
+  onOpenSettings,
+}: SidebarProps) {
   const [version, setVersion] = useState<string | null>(null);
 
   useEffect(() => {
@@ -122,6 +122,7 @@ export function Sidebar({ collapsed, active, onNavigate }: SidebarProps) {
             active={active}
             collapsed={collapsed}
             onNavigate={onNavigate}
+            onOpenSettings={onOpenSettings}
           />
         ))}
       </div>
@@ -137,6 +138,7 @@ export function Sidebar({ collapsed, active, onNavigate }: SidebarProps) {
             active={active}
             collapsed={collapsed}
             onNavigate={onNavigate}
+            onOpenSettings={onOpenSettings}
           />
         ))}
       </div>

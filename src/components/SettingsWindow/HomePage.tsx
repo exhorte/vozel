@@ -1,28 +1,19 @@
-// Page d'accueil (Session 16, pas de section de spec — prompt de reprise +
-// 01_Recherche/Analyse_Fonctionnalites_WisprFlow_vs_Vozel.md §5). Nouvel
-// écran de destination par défaut de la fenêtre Réglages, en tête de sidebar
-// avant « Dictée ».
+// Page d'accueil (Session 16 ; Session 17 : le fil devient cliquable vers la
+// page Historique, « Effacer l'historique » déménage). Écran par défaut.
 //
-// Contenu, adapté au positionnement sans-compte de Vozel (explicitement
-// AUCUNE brique SaaS de Wispr Flow : pas de série/streak présentée comme
-// comparaison sociale, pas de nudge « essayez telle fonctionnalité », pas de
-// quota/upsell) :
-//   1. message de bienvenue simple ;
+// Contenu, adapté au positionnement sans-compte de Vozel (aucune brique SaaS
+// de Wispr Flow — pas de série/streak, pas de nudge, pas de quota) :
+//   1. message de bienvenue ;
 //   2. rappel du déclencheur de dictée (maintien de Ctrl + Win, figé) ;
-//   3. statistiques locales légères : dictées + mots aujourd'hui et sur 7
-//      jours, via l'agrégat `history_stats` ;
-//   4. fil des dictées récentes (`history_list`), aperçu tronqué + date
-//      relative, NON cliquable (aucune destination pertinente n'existe) ;
-//   5. bouton « Effacer l'historique » discret, avec confirmation.
+//   3. statistiques locales légères (dictées + mots aujourd'hui / 7 jours) ;
+//   4. fil des dictées récentes — cliquable vers « Historique » (Session 17,
+//      la page Historique existe désormais) + lien « Voir tout l'historique ».
 //
-// État vide (premier lancement ou juste après un effacement) : ni crash ni
-// « 0 » présenté comme un échec — un simple message à la place du fil et des
-// compteurs.
+// L'effacement de l'historique n'est plus ici : il vit sur la page Historique
+// (une seule action destructive de ce type, là où l'historique se consulte).
 
 import { useCallback, useEffect, useState } from "react";
-import { Trash2 } from "lucide-react";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
+import { ArrowRight } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -30,21 +21,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { historyClear, historyList, historyStats } from "@/lib/tauri";
+import { historyList, historyStats } from "@/lib/tauri";
 import type { HistoryEntry, HistoryStatsPair } from "@/types";
+import type { SettingsPage } from "./Sidebar";
 
-const RECENT_LIMIT = 8;
+const RECENT_LIMIT = 6;
 const PREVIEW_MAX = 140;
 
 // `created_at` est un UTC « YYYY-MM-DD HH:MM:SS » (sans marqueur de fuseau) :
@@ -95,19 +76,18 @@ function StatBlock({ label, stats }: { label: string; stats: { count: number; wo
   );
 }
 
-export function HomePage() {
+export function HomePage({
+  onNavigate,
+}: {
+  onNavigate: (page: SettingsPage) => void;
+}) {
   const [recent, setRecent] = useState<HistoryEntry[] | null>(null);
   const [stats, setStats] = useState<HistoryStatsPair | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [clearing, setClearing] = useState(false);
 
   const reloadHistory = useCallback(async () => {
     const now = new Date();
-    const startOfToday = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    );
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     try {
       const [entries, pair] = await Promise.all([
@@ -125,19 +105,6 @@ export function HomePage() {
   useEffect(() => {
     void reloadHistory();
   }, [reloadHistory]);
-
-  async function confirmClear() {
-    setClearing(true);
-    try {
-      await historyClear();
-      toast.success("Historique effacé");
-      await reloadHistory();
-    } catch (e) {
-      toast.error(String(e));
-    } finally {
-      setClearing(false);
-    }
-  }
 
   const isEmpty = recent !== null && recent.length === 0;
 
@@ -205,60 +172,38 @@ export function HomePage() {
           </Card>
 
           <Card>
-            <CardHeader>
+            <CardHeader className="flex-row items-center justify-between">
               <CardTitle className="text-base">Dictées récentes</CardTitle>
+              <button
+                type="button"
+                onClick={() => onNavigate("history")}
+                className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+              >
+                Voir tout l'historique
+                <ArrowRight className="size-3.5" />
+              </button>
             </CardHeader>
-            <CardContent className="flex flex-col gap-3">
+            <CardContent className="flex flex-col">
               <ul className="flex flex-col divide-y divide-border/60">
                 {recent.map((entry) => (
-                  <li key={entry.id} className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0">
-                    <p className="text-sm text-foreground">{preview(entry.text)}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {relativeTime(entry.created_at)}
-                      {" · "}
-                      {plural(entry.word_count, "mot", "mots")}
-                      {entry.duration_ms != null &&
-                        ` · ${Math.max(1, Math.round(entry.duration_ms / 1000))} s`}
-                    </p>
+                  <li key={entry.id}>
+                    <button
+                      type="button"
+                      onClick={() => onNavigate("history")}
+                      className="-mx-2 flex w-[calc(100%+1rem)] flex-col gap-1 rounded-md px-2 py-3 text-left transition-colors hover:bg-accent first:pt-0 last:pb-0"
+                    >
+                      <span className="text-sm text-foreground">{preview(entry.text)}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {relativeTime(entry.created_at)}
+                        {" · "}
+                        {plural(entry.word_count, "mot", "mots")}
+                        {entry.duration_ms != null &&
+                          ` · ${Math.max(1, Math.round(entry.duration_ms / 1000))} s`}
+                      </span>
+                    </button>
                   </li>
                 ))}
               </ul>
-
-              <div className="flex justify-end">
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-muted-foreground hover:text-destructive"
-                    >
-                      <Trash2 className="size-4" />
-                      Effacer l'historique
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Effacer tout l'historique&nbsp;?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Toutes les dictées enregistrées localement seront
-                        supprimées définitivement, y compris leur texte. Les
-                        compteurs repartiront de zéro. Cette action est
-                        irréversible.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Annuler</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={confirmClear}
-                        disabled={clearing}
-                        className="bg-destructive text-white hover:bg-destructive/90"
-                      >
-                        Effacer
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </div>
             </CardContent>
           </Card>
         </>

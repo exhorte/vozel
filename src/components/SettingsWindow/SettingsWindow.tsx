@@ -1,31 +1,31 @@
-// Fenêtre de réglages — coque façon Wispr Flow : barre de titre custom
-// (`TitleBar`, la fenêtre `main` est en `decorations: false`) + barre
-// latérale repliable (`Sidebar`) + page active.
+// Fenêtre principale — coque façon Wispr Flow : barre de titre custom
+// (`TitleBar`, la fenêtre `main` est en `decorations: false`) + barre latérale
+// repliable (`Sidebar`) + page active.
 //
-// Pages réelles : « Dictée » (`ModelPanel` — moteur, raccourci, cloud,
-// nettoyage IA, Command Mode, push-to-talk) et « Dictionnaire »
-// (`DictionaryPanel`). Les autres entrées de la sidebar sont des
-// placeholders « bientôt » (voir `Sidebar`).
+// Session 17 — 3 pages routées : Accueil (`HomePage`), Dictionnaire
+// (`DictionaryPanel`), Historique (`HistoryPage`). Les réglages ne sont plus
+// une page mais une **fenêtre modale** (`SettingsModal`), ouverte depuis
+// l'entrée « Réglages » de la sidebar (qui garde sa position en bas).
 //
-// `TooltipProvider` est monté ici une fois pour les tooltips explicatifs des
-// panneaux (§1.3 point 2). `Toaster` (sonner) pour les confirmations du
-// `DictionaryPanel` (§2.1).
+// `TooltipProvider` monté ici pour les tooltips explicatifs de `ModelPanel`
+// (rendu dans la modale). `Toaster` (sonner) pour les confirmations.
 
 import { useEffect, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { HomePage } from "./HomePage";
-import { ModelPanel } from "./ModelPanel";
 import { DictionaryPanel } from "./DictionaryPanel";
+import { HistoryPage } from "./HistoryPage";
+import { SettingsModal } from "./SettingsModal";
 import { TitleBar } from "./TitleBar";
 import { Sidebar, type SettingsPage } from "./Sidebar";
 
 const COLLAPSE_KEY = "vozel:sidebar-collapsed";
 const PAGE_TITLES: Record<SettingsPage, string> = {
   home: "Accueil",
-  dictation: "Dictée",
   dictionary: "Dictionnaire",
+  history: "Historique",
 };
 
 function readCollapsed(): boolean {
@@ -39,6 +39,7 @@ function readCollapsed(): boolean {
 export function SettingsWindow() {
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [page, setPage] = useState<SettingsPage>("home");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -57,7 +58,12 @@ export function SettingsWindow() {
         />
 
         <div className="vz-shell-body">
-          <Sidebar collapsed={collapsed} active={page} onNavigate={setPage} />
+          <Sidebar
+            collapsed={collapsed}
+            active={page}
+            onNavigate={setPage}
+            onOpenSettings={() => setSettingsOpen(true)}
+          />
 
           <main className="vz-page">
             <header className="shrink-0 border-b border-black/10 px-8 py-4">
@@ -67,14 +73,16 @@ export function SettingsWindow() {
             </header>
             <ScrollArea className="min-h-0 flex-1">
               <div className="mx-auto flex max-w-2xl flex-col gap-8 p-8">
-                {page === "home" && <HomePage />}
-                {page === "dictation" && <ModelPanel />}
+                {page === "home" && <HomePage onNavigate={setPage} />}
                 {page === "dictionary" && <DictionaryPanel />}
+                {page === "history" && <HistoryPage />}
               </div>
             </ScrollArea>
           </main>
         </div>
       </div>
+
+      <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
       <Toaster />
     </TooltipProvider>
   );

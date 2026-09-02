@@ -1,8 +1,9 @@
-// Réglages : moteur ASR local (§1.2) ; — quand le cloud est activé —
-// fournisseur cloud + clé API + avertissement confidentialité (§2.3) ;
-// switch « nettoyage IA local » (§2.4). Toute modification appelle
-// `saveSettings` immédiatement, persisté en SQLite côté backend
-// (`src-tauri/src/storage/settings.rs`, Spec_Backend_Desktop.md §2.1).
+// Section « Général » de la fenêtre modale Réglages (Session 17 — ce n'est
+// plus une page routée de la sidebar). Contenu : moteur ASR local (§1.2) ;
+// — quand le cloud est activé — fournisseur cloud + clé API + avertissement
+// confidentialité (§2.3) ; switch « nettoyage IA local » (§2.4). Toute
+// modification appelle `saveSettings` immédiatement, persisté en SQLite côté
+// backend (`src-tauri/src/storage/settings.rs`, Spec_Backend_Desktop.md §2.1).
 //
 // Le déclenchement de la dictée n'est plus un réglage : maintien de Ctrl+Win,
 // câblé en dur (`hotkey::modifier_combo`, demande utilisateur 2026-09-02) —
