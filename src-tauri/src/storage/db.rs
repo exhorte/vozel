@@ -82,6 +82,8 @@ mod tests {
             let pool = memory_pool().await;
             // Tables applicatives uniquement (hors `_sqlx_migrations` et la
             // table interne `sqlite_sequence` créée par AUTOINCREMENT).
+            // Ordre = tri SQL sur `name` : `dictation_history` (0006) se place
+            // avant `dictionary` (`dicta` < `dicti`).
             let tables: Vec<String> = sqlx::query_scalar(
                 "SELECT name FROM sqlite_master
                  WHERE type = 'table' AND name NOT LIKE '\\_%' ESCAPE '\\' AND name <> 'sqlite_sequence'
@@ -90,7 +92,14 @@ mod tests {
             .fetch_all(&pool)
             .await
             .expect("liste des tables");
-            assert_eq!(tables, vec!["dictionary".to_string(), "settings".to_string()]);
+            assert_eq!(
+                tables,
+                vec![
+                    "dictation_history".to_string(),
+                    "dictionary".to_string(),
+                    "settings".to_string(),
+                ]
+            );
 
             // Colonnes de `settings` conformes au struct Rust (0001..0005).
             let cols: Vec<String> =

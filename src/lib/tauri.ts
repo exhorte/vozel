@@ -8,6 +8,8 @@ import type {
   CommandModeContext,
   DictationStatus,
   DictionaryEntry,
+  HistoryEntry,
+  HistoryStatsPair,
   Reformulation,
   Settings,
 } from "../types";
@@ -92,6 +94,31 @@ export async function dictUpdate(id: number, from: string, to: string): Promise<
 
 export async function dictDelete(id: number): Promise<void> {
   return invoke("dict_delete", { id });
+}
+
+// --- Historique local des dictées (Session 16, pas de section de spec —
+// prompt de reprise + Analyse_Fonctionnalites_WisprFlow_vs_Vozel.md §6). La
+// table est alimentée par le pipeline après chaque dictée injectée ; ces
+// appels servent la page d'accueil. ---
+
+/** Les dernières dictées, plus récentes d'abord (`limit` borné 1..100 côté
+ *  backend, défaut 10). */
+export async function historyList(limit?: number): Promise<HistoryEntry[]> {
+  return invoke("history_list", { limit });
+}
+
+/** Compteurs jour + semaine. Les bornes sont calculées ici (fuseau local) :
+ *  `todaySince` = minuit local, `weekSince` = il y a 7 jours, en ISO8601. */
+export async function historyStats(
+  todaySince: string,
+  weekSince: string,
+): Promise<HistoryStatsPair> {
+  return invoke("history_stats", { todaySince, weekSince });
+}
+
+/** Vide tout l'historique local (confirmation demandée côté UI). */
+export async function historyClear(): Promise<void> {
+  return invoke("history_clear");
 }
 
 // Écoute tous les événements de cycle de vie de la dictée, émis à la fois

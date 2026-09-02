@@ -19,6 +19,7 @@ use crate::postprocess::command_mode::{self, Reformulation};
 use crate::postprocess::llm::GenParams;
 use crate::storage::db::Db;
 use crate::storage::dictionary::{self, DictionaryEntry};
+use crate::storage::history::{self, HistoryEntry, HistoryStats};
 use crate::storage::settings::Settings;
 use crate::{AsrState, CleanerState, CommandModeState, PendingCommand, PipelineState};
 
@@ -228,7 +229,69 @@ pub fn run_pipeline(app: &AppHandle) {
         return;
     }
 
+    // Historique local (Session 16) : enregistré *après* l'injection réussie,
+    // pour qu'aucune écriture en base ne puisse retarder ni faire échouer une
+    // dictée. Un échec ici est journalisé sans plus — la dictée a abouti.
+    // `duration_ms` est dérivé du PCM déjà en main (16 kHz mono, cf.
+    // `audio::capture` / `asr::local`), donc gratuit à cet endroit.
+    {
+        let duration_ms = (pcm.len() as u64 * 1000 / 16_000) as i64;
+        let pool = app.state::<Db>().0.clone();
+        if let Err(e) = tauri::async_runtime::block_on(history::record(
+            &pool,
+            &cleaned,
+            Some(duration_ms),
+            history::count_words(&cleaned),
+        )) {
+            eprintln!("[pipeline] enregistrement de l'historique échoué ({e}), ignoré");
+        }
+    }
+
     let _ = app.emit("dictation_idle", ());
+}
+
+// --- Historique local des dictées (Session 16, pas de section de spec —
+// prompt de reprise + Analyse_Fonctionnalites_WisprFlow_vs_Vozel.md §6). La
+// table est alimentée par `run_pipeline` ci-dessus ; ces commandes servent la
+// page d'accueil (Priorité 2). ---
+
+/// Les dernières dictées, plus récentes d'abord (`limit` borné 1..=100,
+/// défaut 10) — fil de la page d'accueil.
+#[tauri::command]
+pub async fn history_list(app: AppHandle, limit: Option<i64>) -> Result<Vec<HistoryEntry>, String> {
+    let pool = app.state::<Db>().0.clone();
+    history::list_recent(&pool, limit.unwrap_or(10).clamp(1, 100)).await
+}
+
+/// Compteurs jour + semaine (nombre de dictées, total de mots) pour la page
+/// d'accueil. Les bornes sont calculées côté frontend, qui seul connaît le
+/// fuseau local : `today_since` = minuit local du jour, `week_since` = il y a
+/// 7 jours (ISO8601, `datetime()` les normalise côté SQL).
+#[derive(serde::Serialize)]
+pub struct HistoryStatsPair {
+    pub today: HistoryStats,
+    pub week: HistoryStats,
+}
+
+#[tauri::command]
+pub async fn history_stats(
+    app: AppHandle,
+    today_since: String,
+    week_since: String,
+) -> Result<HistoryStatsPair, String> {
+    let pool = app.state::<Db>().0.clone();
+    let today = history::stats_since(&pool, &today_since).await?;
+    let week = history::stats_since(&pool, &week_since).await?;
+    Ok(HistoryStatsPair { today, week })
+}
+
+/// Vide tout l'historique local (bouton « Effacer l'historique » de la page
+/// d'accueil, avec confirmation côté UI). Non optionnel : le texte stocké est
+/// celui réellement dicté, jamais filtré ni synchronisé.
+#[tauri::command]
+pub async fn history_clear(app: AppHandle) -> Result<(), String> {
+    let pool = app.state::<Db>().0.clone();
+    history::clear(&pool).await
 }
 
 // --- Command Mode (Spec_Frontend.md §2.2 / Spec_Backend_Desktop.md §2.3.3) ---

@@ -55,3 +55,27 @@ export interface DictionaryEntry {
 }
 
 export type DictationStatus = "idle" | "listening" | "processing" | "error";
+
+// Miroir de src-tauri/src/storage/history.rs::HistoryEntry (historique local
+// des dictées, Session 16). `created_at` : UTC "YYYY-MM-DD HH:MM:SS".
+// `duration_ms` : `null` si la durée n'était pas disponible à
+// l'enregistrement.
+export interface HistoryEntry {
+  id: number;
+  created_at: string;
+  text: string;
+  word_count: number;
+  duration_ms: number | null;
+}
+
+// Miroir de src-tauri/src/storage/history.rs::HistoryStats.
+export interface HistoryStats {
+  count: number;
+  word_count: number;
+}
+
+// Retour de la commande `history_stats` (compteurs jour + semaine).
+export interface HistoryStatsPair {
+  today: HistoryStats;
+  week: HistoryStats;
+}
