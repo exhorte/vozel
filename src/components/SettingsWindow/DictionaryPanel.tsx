@@ -2,6 +2,15 @@
 // entrées de remplacement, connecté aux commandes `dict_*` du backend
 // (`storage::dictionary`, Spec_Backend_Desktop.md §2.2).
 //
+// Session 17 (P4) : **restylage visuel seulement** façon Wispr Flow (carte
+// d'intro dismissible + pills d'exemples + liste en dessous). La logique et
+// le modèle de données sont inchangés — toujours des paires `from`/`to`
+// appliquées en post-traitement texte. Vozel n'a **pas** de mode « mot
+// isolé » pour biaiser le moteur ASR (Parakeet local / fournisseurs cloud) :
+// aucun mécanisme de ce type n'existe, et le simuler par une paire
+// `from == to` laisserait croire à une fonctionnalité de boost inexistante.
+// L'idée part en recherche (`01_Recherche/`), pas ici.
+//
 // Écart signalé (PROGRESS.md) : le formulaire d'ajout/édition est un
 // formulaire contrôlé simple plutôt que le trio `react-hook-form` + `zod` +
 // shadcn `form` "recommandé" par la spec — deux champs texte, validation
@@ -9,9 +18,10 @@
 // renvoie un message clair. Trois dépendances pour ça ne se justifient pas.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { MoreHorizontal, Plus } from "lucide-react";
+import { MoreHorizontal, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -63,6 +73,25 @@ interface DraftEntry {
   to: string;
 }
 
+// Exemples purement illustratifs de la carte d'intro — de vraies paires
+// `from → to` (jamais des « mots isolés », voir en-tête de fichier).
+const EXAMPLE_PAIRS: Array<[string, string]> = [
+  ["type script", "TypeScript"],
+  ["parak it", "Parakeet"],
+  ["e xponent value", "ExponentValue"],
+  ["get up", "GitHub"],
+];
+
+const INTRO_DISMISSED_KEY = "vozel:dict-intro-dismissed";
+
+function readIntroDismissed(): boolean {
+  try {
+    return localStorage.getItem(INTRO_DISMISSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export function DictionaryPanel() {
   const [entries, setEntries] = useState<DictionaryEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -72,6 +101,16 @@ export function DictionaryPanel() {
   const [draft, setDraft] = useState<DraftEntry | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<DictionaryEntry | null>(null);
+  const [introDismissed, setIntroDismissed] = useState(readIntroDismissed);
+
+  function dismissIntro() {
+    setIntroDismissed(true);
+    try {
+      localStorage.setItem(INTRO_DISMISSED_KEY, "1");
+    } catch {
+      /* préférence non persistée, pas bloquant */
+    }
+  }
 
   const reload = useCallback(async () => {
     try {
@@ -150,15 +189,56 @@ export function DictionaryPanel() {
   }
 
   return (
-    <section className="dictionary-panel flex flex-col gap-3">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-base font-semibold">Dictionnaire personnalisé</h2>
-        <p className="text-sm text-muted-foreground">
-          Remplacements appliqués après la transcription, avant le nettoyage —
-          utile pour les noms propres et le jargon (« type script » →
-          « TypeScript »).
-        </p>
-      </div>
+    <section className="dictionary-panel flex flex-col gap-4">
+      {introDismissed ? (
+        <div className="flex flex-col gap-1">
+          <h2 className="text-base font-semibold">Dictionnaire personnalisé</h2>
+          <p className="text-sm text-muted-foreground">
+            Remplacements appliqués après la transcription, avant le nettoyage —
+            pour les noms propres et le jargon.
+          </p>
+        </div>
+      ) : (
+        <Card className="relative border-amber-200/60 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-950/20">
+          <button
+            type="button"
+            onClick={dismissIntro}
+            aria-label="Masquer cette carte"
+            className="absolute top-2 right-2 rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <X className="size-4" />
+          </button>
+          <CardContent className="flex flex-col gap-3 pr-8">
+            <h2 className="text-lg font-semibold tracking-tight">
+              Vozel écrit les mots comme vous les dites.
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Quand une transcription se trompe régulièrement sur un nom propre
+              ou un terme métier, ajoutez une correction&nbsp;: le texte reconnu
+              (à gauche) est remplacé par la forme voulue (à droite) dans chaque
+              dictée, avant le nettoyage. Insensible à la casse et aux espaces.
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {EXAMPLE_PAIRS.map(([from, to]) => (
+                <span
+                  key={from}
+                  className="inline-flex items-center gap-1.5 rounded-full border bg-background px-2.5 py-1 text-xs"
+                >
+                  <span className="text-muted-foreground line-through">{from}</span>
+                  <span aria-hidden>→</span>
+                  <span className="font-medium">{to}</span>
+                </span>
+              ))}
+            </div>
+            <div>
+              <Button size="sm" onClick={() => setDraft({ from: "", to: "" })}>
+                <Plus className="size-4" />
+                Ajouter une correction
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex items-center gap-2">
         <Input
