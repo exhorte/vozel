@@ -153,7 +153,7 @@ pub fn run_pipeline(app: &AppHandle) {
     // Laisse le temps à un dernier callback `cpal` déjà en vol de pousser sa
     // frame avant qu'on vide le canal — la capture vient d'être mise en
     // pause (`CaptureCommand::Stop`), pas coupée instantanément.
-    thread::sleep(Duration::from_millis(50));
+    thread::sleep(Duration::from_millis(80));
 
     let pcm: Vec<f32> = {
         let rx = match pipeline.pcm_rx.lock() {
@@ -170,9 +170,18 @@ pub fn run_pipeline(app: &AppHandle) {
         buf
     };
 
+    println!(
+        "[pipeline] {} échantillons PCM récupérés (~{:.2}s @ 16 kHz)",
+        pcm.len(),
+        pcm.len() as f32 / 16_000.0
+    );
+
     if pcm.is_empty() {
-        // Rien capté (VAD a tout jugé silencieux, ou appui trop bref) — pas
-        // une erreur, simplement rien à transcrire.
+        // Rien capté. Le plus souvent : micro muet/coupé, mauvais
+        // périphérique par défaut, ou parole trop faible pour le VAD (voir
+        // le log `[audio] capture arrêtée : … pic d'amplitude …`).
+        eprintln!("[pipeline] aucun échantillon capté — rien à transcrire (voir les logs [audio] ci-dessus)");
+        let _ = app.emit("dictation_idle", ());
         return;
     }
 
@@ -194,6 +203,7 @@ pub fn run_pipeline(app: &AppHandle) {
             return;
         }
     };
+    println!("[pipeline] transcription brute : {raw_text:?}");
 
     // Dictionnaire personnalisé (§2.2) : rechargé à chaque dictée (petit,
     // lookup < 10 ms même à 1000 entrées — voir storage::db::tests) pour que
@@ -213,7 +223,9 @@ pub fn run_pipeline(app: &AppHandle) {
     // — le repli sur les règles en cas de défaillance du LLM est interne à
     // `LlmCleaner`.
     let cleaned = app.state::<CleanerState>().0.clean(&raw_text, &replacements);
+    println!("[pipeline] texte nettoyé : {cleaned:?}");
     if cleaned.is_empty() {
+        eprintln!("[pipeline] texte vide après nettoyage — rien à injecter");
         let _ = app.emit("dictation_idle", ());
         return;
     }
@@ -224,6 +236,7 @@ pub fn run_pipeline(app: &AppHandle) {
         let _ = app.emit("dictation_error", e);
         return;
     }
+    println!("[pipeline] injecté ({} caractères) dans la fenêtre active", cleaned.chars().count());
 
     // Historique local (Session 16) : enregistré *après* l'injection réussie,
     // pour qu'aucune écriture en base ne puisse retarder ni faire échouer une
