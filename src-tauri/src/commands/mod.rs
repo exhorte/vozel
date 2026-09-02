@@ -2,11 +2,11 @@
 //! Point de couture entre l'UI et les modules `audio`/`asr`/`postprocess`/
 //! `injection`/`storage`. À étoffer au fil des phases de la Roadmap.
 //!
-//! Pipeline complet (Spec_Backend_Desktop.md §1.6) : `hotkey` (ou ces
-//! commandes, pour un futur bouton UI) pilotent `audio::capture` via
-//! `PipelineState::capture_tx` ; à l'arrêt, `run_pipeline` vide les frames
-//! PCM accumulées (`PipelineState::pcm_rx`) et enchaîne
-//! `asr::local` → `postprocess::cleanup` → `injection::windows`.
+//! Pipeline complet (Spec_Backend_Desktop.md §1.6) : le maintien de Ctrl+Win
+//! (`hotkey::modifier_combo`), ou ces commandes pour le bouton UI, pilotent
+//! `audio::capture` via `PipelineState::capture_tx` ; à l'arrêt,
+//! `run_pipeline` vide les frames PCM accumulées (`PipelineState::pcm_rx`) et
+//! enchaîne `asr` → `postprocess` → `injection::windows`.
 
 use std::sync::atomic::Ordering;
 use std::{thread, time::Duration};
@@ -15,13 +15,11 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::audio::capture::CaptureCommand;
 use crate::injection::TextInjector;
-use crate::postprocess::command_mode::{self, Reformulation};
-use crate::postprocess::llm::GenParams;
 use crate::storage::db::Db;
 use crate::storage::dictionary::{self, DictionaryEntry};
 use crate::storage::history::{self, HistoryEntry, HistoryStats};
 use crate::storage::settings::Settings;
-use crate::{AsrState, CleanerState, CommandModeState, PendingCommand, PipelineState};
+use crate::{AsrState, CleanerState, PipelineState};
 
 /// Démarre une session de dictée. Déclenchée par le hotkey global ou par
 /// l'UI (clic sur `FloatingWidget`) — les deux passent par cette même
@@ -89,11 +87,9 @@ pub fn llm_model_available(app: AppHandle) -> bool {
 }
 
 /// Sauvegarde les réglages modifiés par l'utilisateur dans SQLite
-/// (Spec_Backend_Desktop.md §2.1).
-/// Note : ne réapplique pas à chaud un raccourci clavier modifié (le hotkey
-/// global est enregistré une seule fois au démarrage, voir `hotkey::mod` —
-/// un redémarrage de l'app est nécessaire pour l'instant, à lever quand
-/// `HotkeyManager` gagnera une méthode de ré-enregistrement).
+/// (Spec_Backend_Desktop.md §2.1). Le nettoyage LLM ne prend effet qu'au
+/// redémarrage (modèle chargé une seule fois au démarrage). Le déclenchement
+/// de la dictée (Ctrl+Win) n'est pas un réglage.
 #[tauri::command]
 pub async fn save_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
     let pool = app.state::<Db>().0.clone();
@@ -292,203 +288,6 @@ pub async fn history_stats(
 pub async fn history_clear(app: AppHandle) -> Result<(), String> {
     let pool = app.state::<Db>().0.clone();
     history::clear(&pool).await
-}
-
-// --- Command Mode (Spec_Frontend.md §2.2 / Spec_Backend_Desktop.md §2.3.3) ---
-//
-// Déclenchement explicite par un raccourci global dédié
-// (`Settings::command_mode_hotkey`, géré dans `hotkey::HotkeyManager`) :
-//   1. `open_command_palette` capture la sélection courante (Ctrl+C synthétique
-//      + presse-papiers, restauré derrière) et la fenêtre au premier plan, puis
-//      affiche la fenêtre `command` (palette shadcn).
-//   2. L'utilisateur choisit une reformulation → `run_command_mode(id)` : le
-//      LLM local reformule, la fenêtre cible est ramenée au premier plan, et le
-//      résultat est collé par-dessus la sélection (`injection::windows`).
-//
-// 100 % local (critère §2.3.4) : même `LlmEngine` que le nettoyage §2.3. Si le
-// modèle n'est pas installé, `CommandModeState::engine` est `None` et la palette
-// l'affiche (pas de repli « règles » — reformuler n'est pas nettoyer).
-
-/// La fenêtre au premier plan (HWND brut en `isize`, `0` si aucune). Sert à
-/// re-cibler l'app d'origine avant de coller le texte reformulé.
-#[cfg(target_os = "windows")]
-fn foreground_window() -> isize {
-    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
-    unsafe { GetForegroundWindow() }.0 as isize
-}
-
-/// Ramène `hwnd` au premier plan (best-effort — `SetForegroundWindow` peut
-/// être refusé par Windows selon le contexte de focus ; suffisant ici car
-/// l'appel suit de peu une interaction clavier de l'utilisateur).
-#[cfg(target_os = "windows")]
-fn restore_foreground(hwnd: isize) {
-    use windows::Win32::Foundation::HWND;
-    use windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
-    if hwnd == 0 {
-        return;
-    }
-    let hwnd = HWND(hwnd as *mut core::ffi::c_void);
-    unsafe {
-        let _ = SetForegroundWindow(hwnd);
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn foreground_window() -> isize {
-    0
-}
-#[cfg(not(target_os = "windows"))]
-fn restore_foreground(_hwnd: isize) {}
-
-/// Capture la sélection courante de l'app au premier plan : sauvegarde le
-/// presse-papiers, le vide, simule Ctrl+C, relit, puis restaure le contenu
-/// d'origine (même précaution que `injection::clipboard::paste_and_restore`).
-/// `None` si rien n'a été copié (aucune sélection) ou en cas d'échec.
-fn capture_selection() -> Option<String> {
-    use arboard::Clipboard;
-    use enigo::{Direction, Enigo, Key, Keyboard, Settings as EnigoSettings};
-
-    let mut clipboard = Clipboard::new().ok()?;
-    let previous = clipboard.get_text().ok();
-    // Vider d'abord : sinon une sélection vide laisserait l'ancien contenu et
-    // on le prendrait à tort pour la sélection.
-    let _ = clipboard.set_text(String::new());
-
-    let mut enigo = Enigo::new(&EnigoSettings::default()).ok()?;
-    let _ = enigo.key(Key::Control, Direction::Press);
-    let _ = enigo.key(Key::C, Direction::Click);
-    let _ = enigo.key(Key::Control, Direction::Release);
-    thread::sleep(Duration::from_millis(120));
-
-    let copied = clipboard
-        .get_text()
-        .ok()
-        .filter(|s| !s.trim().is_empty());
-
-    match previous {
-        Some(prev) => {
-            let _ = clipboard.set_text(prev);
-        }
-        None => {
-            let _ = clipboard.clear();
-        }
-    }
-    copied
-}
-
-/// Appelé depuis le thread du raccourci global (`hotkey::HotkeyManager`) sur
-/// appui du raccourci Command Mode. Non `#[tauri::command]` : déclenché côté
-/// Rust, pas depuis l'UI.
-pub fn open_command_palette(app: &AppHandle) {
-    let target_hwnd = foreground_window();
-    let selected_text = capture_selection().unwrap_or_default();
-
-    app.state::<CommandModeState>().store_pending(PendingCommand {
-        selected_text: selected_text.clone(),
-        target_hwnd,
-    });
-
-    println!(
-        "[command-mode] palette ouverte (sélection : {} caractères)",
-        selected_text.chars().count()
-    );
-    if let Some(win) = app.get_webview_window("command") {
-        let _ = win.show();
-        let _ = win.set_focus();
-    } else {
-        eprintln!("[command-mode] fenêtre 'command' introuvable");
-    }
-    // La palette (montée une fois, la fenêtre est cachée/réaffichée) réagit à
-    // cet événement pour rafraîchir le texte affiché à chaque ouverture.
-    let _ = app.emit("command_palette_opened", selected_text);
-}
-
-/// Contexte affiché par la palette à l'ouverture : la sélection capturée et si
-/// le modèle LLM local est disponible pour ce mode.
-#[derive(serde::Serialize)]
-pub struct CommandModeContext {
-    pub selected_text: String,
-    pub model_available: bool,
-}
-
-/// État courant du Command Mode pour la palette (au montage et à chaque
-/// `command_palette_opened`).
-#[tauri::command]
-pub fn command_mode_context(app: AppHandle) -> CommandModeContext {
-    let cm = app.state::<CommandModeState>();
-    let selected_text = cm
-        .peek_pending()
-        .map(|pc| pc.selected_text)
-        .unwrap_or_default();
-    CommandModeContext {
-        selected_text,
-        model_available: cm.engine.is_some(),
-    }
-}
-
-/// Catalogue fixe de reformulations proposées dans la palette (§2.2 point 1).
-#[tauri::command]
-pub fn command_mode_reformulations() -> Vec<Reformulation> {
-    command_mode::REFORMULATIONS.to_vec()
-}
-
-/// Applique la reformulation `reformulation_id` à la sélection en attente, via
-/// le LLM local, puis colle le résultat par-dessus la sélection dans l'app
-/// d'origine. Retourne le texte reformulé (la palette l'affiche brièvement
-/// avant de se fermer). Bloquant (~10-40 s CPU sur le modèle int4) — exécuté
-/// sur le pool de threads des commandes Tauri, pas le thread d'événements.
-#[tauri::command]
-pub fn run_command_mode(app: AppHandle, reformulation_id: String) -> Result<String, String> {
-    let cm = app.state::<CommandModeState>();
-    let engine = cm
-        .engine
-        .clone()
-        .ok_or("Le modèle LLM local n'est pas installé — Command Mode indisponible (voir models\\llm\\).")?;
-
-    let pending = cm
-        .peek_pending()
-        .ok_or("Aucune sélection en attente — relancez le raccourci Command Mode.")?;
-    if pending.selected_text.trim().is_empty() {
-        return Err("Aucun texte sélectionné au moment du déclenchement.".into());
-    }
-
-    let refm = command_mode::REFORMULATIONS
-        .iter()
-        .find(|r| r.id == reformulation_id)
-        .ok_or_else(|| format!("reformulation inconnue : {reformulation_id}"))?;
-
-    let out = command_mode::handle_command(
-        &engine,
-        refm.instruction,
-        &pending.selected_text,
-        &GenParams::default(),
-    )?;
-
-    // Cacher la palette et rendre l'app cible au premier plan avant de coller.
-    if let Some(win) = app.get_webview_window("command") {
-        let _ = win.hide();
-    }
-    restore_foreground(pending.target_hwnd);
-    thread::sleep(Duration::from_millis(120));
-
-    crate::injection::windows::WindowsInjector.inject(&out)?;
-
-    cm.take_pending();
-    Ok(out)
-}
-
-/// Ferme la palette sans rien appliquer (Échap / clic hors liste). Restaure le
-/// premier plan de l'app d'origine et jette la sélection en attente.
-#[tauri::command]
-pub fn close_command_palette(app: AppHandle) {
-    let cm = app.state::<CommandModeState>();
-    let target_hwnd = cm.take_pending().map(|pc| pc.target_hwnd);
-    if let Some(win) = app.get_webview_window("command") {
-        let _ = win.hide();
-    }
-    if let Some(hwnd) = target_hwnd {
-        restore_foreground(hwnd);
-    }
 }
 
 #[cfg(test)]

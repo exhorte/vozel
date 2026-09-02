@@ -11,7 +11,6 @@
 //! est absent ou échoue — ne jamais casser une dictée à cause du LLM.
 
 pub mod cleanup;
-pub mod command_mode;
 pub mod llm;
 
 use std::sync::Arc;
@@ -41,8 +40,7 @@ impl TextCleaner for RuleCleaner {
 /// finale même si le LLM les a manquées). Si le LLM lève une erreur ou
 /// renvoie du vide, on garde le résultat « règles seules ».
 pub struct LlmCleaner {
-    /// Partagé (via `Arc`) avec `CommandModeState` quand le Command Mode est
-    /// aussi actif — le modèle n'est chargé qu'une fois (voir `lib.rs`).
+    /// `Arc` : le modèle (~1,9 Go) n'est chargé qu'une fois dans `lib.rs`.
     engine: Arc<LlmEngine>,
     params: GenParams,
 }

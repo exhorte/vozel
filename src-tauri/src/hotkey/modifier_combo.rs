@@ -1,13 +1,11 @@
 //! Push-to-talk sur le **maintien simultané de Ctrl + Win seuls** (sans 3ᵉ
-//! touche) — Spec_Backend_Desktop.md §2.5.
+//! touche) — **seul déclencheur de la dictée** (demande utilisateur,
+//! 2026-09-02 ; à l'origine Spec_Backend_Desktop.md §2.5, alors optionnel et
+//! additionnel au raccourci configurable — celui-ci a depuis été retiré).
 //!
-//! Pourquoi un mécanisme distinct : `HotkeyManager` (§1.1, crate
-//! `global-hotkey` → `RegisterHotKey` Win32) exige une touche non
-//! modificatrice dans la combinaison. « Ctrl+Win » à vide n'est pas
-//! représentable ainsi (le garde `MODIFIER_CODES` de `ModelPanel.tsx` le
-//! reflète côté UI). Ce module **s'ajoute** à `HotkeyManager`, ne le
-//! remplace pas : n'importe quelle combinaison classique continue de passer
-//! par `global-hotkey` inchangé.
+//! « Ctrl+Win » à vide n'était pas représentable par la crate `global-hotkey`
+//! (`RegisterHotKey` Win32 exige une touche non modificatrice), d'où ce hook
+//! bas niveau dédié — devenu l'unique chemin.
 //!
 //! Mécanisme : hook clavier bas niveau `WH_KEYBOARD_LL`, installé sur le
 //! thread qui pompe la boucle de messages Win32 (thread principal Tauri, via
@@ -18,13 +16,16 @@
 //! (démarrage/arrêt de dictée, pipeline) tourne sur un thread dédié réveillé
 //! par `unpark`, jamais dans le callback.
 //!
-//! Règle d'activation (exacte, §2.5 point 2) : démarrage dès que Ctrl **et**
-//! Win sont enfoncées (peu importe l'ordre) ; arrêt dès que Ctrl **ou** Win
-//! est relâchée ; une 3ᵉ touche pendant le maintien n'annule rien (on ne
-//! suit que les VK Ctrl/Win). Sémantique identique au `PushToTalk` existant.
+//! Règle d'activation : démarrage dès que Ctrl **et** Win sont enfoncées
+//! (peu importe l'ordre) ; arrêt dès que Ctrl **ou** Win est relâchée ; une
+//! 3ᵉ touche pendant le maintien n'annule rien (on ne suit que les VK
+//! Ctrl/Win).
 //!
 //! Les touches ne sont **pas** consommées (`CallNextHookEx` toujours appelé)
-//! — le reste du système voit Ctrl+Win normalement.
+//! — le reste du système voit Ctrl+Win normalement (choix retenu avec
+//! l'utilisateur 2026-09-02 : conséquence connue = relâcher Win en dernier
+//! peut ouvrir le menu Démarrer, Ctrl+Win+D/F/flèches restent des raccourcis
+//! système).
 
 #![cfg(target_os = "windows")]
 

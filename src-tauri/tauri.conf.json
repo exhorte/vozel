@@ -36,21 +36,6 @@
         "center": false,
         "x": 40,
         "y": 40
-      },
-      {
-        "label": "command",
-        "title": "Vozel — Command Mode",
-        "width": 560,
-        "height": 420,
-        "resizable": false,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "shadow": false,
-        "center": true,
-        "visible": false,
-        "focus": false
       }
     ],
     "security": {

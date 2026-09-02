@@ -101,7 +101,9 @@ mod tests {
                 ]
             );
 
-            // Colonnes de `settings` conformes au struct Rust (0001..0005).
+            // Colonnes de `settings` conformes au struct Rust après
+            // `0007_ctrl_win_only.sql` (retrait de hotkey / hotkey_mode /
+            // ctrl_win_ptt_enabled / command_mode_enabled / command_mode_hotkey).
             let cols: Vec<String> =
                 sqlx::query_scalar("SELECT name FROM pragma_table_info('settings') ORDER BY name")
                     .fetch_all(&pool)
@@ -114,11 +116,6 @@ mod tests {
                     "cloud_api_key".to_string(),
                     "cloud_enabled".to_string(),
                     "cloud_provider".to_string(),
-                    "command_mode_enabled".to_string(),
-                    "command_mode_hotkey".to_string(),
-                    "ctrl_win_ptt_enabled".to_string(),
-                    "hotkey".to_string(),
-                    "hotkey_mode".to_string(),
                     "id".to_string(),
                     "llm_cleanup_enabled".to_string(),
                 ]
