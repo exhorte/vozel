@@ -1,12 +1,12 @@
 // Types partagés avec le backend (miroir de src-tauri/src/storage/settings.rs
 // et src-tauri/src/asr/types.rs). À garder synchronisé au fil du projet.
-
-export type HotkeyMode = "push_to_talk" | "toggle";
+//
+// Le déclenchement de la dictée n'est plus un réglage : c'est le maintien de
+// Ctrl + Win, câblé en dur (`hotkey::modifier_combo`, demande utilisateur
+// 2026-09-02).
 
 export interface Settings {
   asr_provider: string;
-  hotkey: string;
-  hotkey_mode: HotkeyMode;
   cloud_enabled: boolean;
   /** Fournisseur ASR cloud ("groq" par défaut). UI dans Spec_Frontend.md §2.3. */
   cloud_provider: string;
@@ -14,30 +14,6 @@ export interface Settings {
   cloud_api_key: string;
   /** Nettoyage avancé par LLM local (§2.3). Opt-in ; effet au redémarrage. */
   llm_cleanup_enabled: boolean;
-  /** Push-to-talk sur le maintien de Ctrl+Win seul (§2.5). Opt-in (hook
-   *  clavier bas niveau) ; effet au redémarrage. */
-  ctrl_win_ptt_enabled: boolean;
-  /** Command Mode (§2.2) : palette de reformulation d'une sélection,
-   *  déclenchée par `command_mode_hotkey`. Opt-in ; effet au redémarrage. */
-  command_mode_enabled: boolean;
-  /** Raccourci global dédié au Command Mode (syntaxe
-   *  `global_hotkey::hotkey::HotKey`, comme `hotkey`). */
-  command_mode_hotkey: string;
-}
-
-// Miroir de src-tauri/src/postprocess/command_mode.rs::Reformulation.
-// `id` : stable ; `label` : affiché dans la palette ; `instruction` : consigne
-// envoyée au LLM (le frontend renvoie l'`id`, pas l'instruction).
-export interface Reformulation {
-  id: string;
-  label: string;
-  instruction: string;
-}
-
-// Retour de la commande `command_mode_context`.
-export interface CommandModeContext {
-  selected_text: string;
-  model_available: boolean;
 }
 
 export interface TranscriptionResult {

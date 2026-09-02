@@ -8,7 +8,7 @@
 // comparaison sociale, pas de nudge « essayez telle fonctionnalité », pas de
 // quota/upsell) :
 //   1. message de bienvenue simple ;
-//   2. rappel du raccourci de dictée configuré (lu depuis `get_settings`) ;
+//   2. rappel du déclencheur de dictée (maintien de Ctrl + Win, figé) ;
 //   3. statistiques locales légères : dictées + mots aujourd'hui et sur 7
 //      jours, via l'agrégat `history_stats` ;
 //   4. fil des dictées récentes (`history_list`), aperçu tronqué + date
@@ -41,42 +41,11 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { getSettings, historyClear, historyList, historyStats } from "@/lib/tauri";
-import type { HistoryEntry, HistoryStatsPair, Settings } from "@/types";
+import { historyClear, historyList, historyStats } from "@/lib/tauri";
+import type { HistoryEntry, HistoryStatsPair } from "@/types";
 
 const RECENT_LIMIT = 8;
 const PREVIEW_MAX = 140;
-
-// `control+shift+Space` → « Ctrl + Maj + Space ». Purement cosmétique.
-const MOD_LABELS: Record<string, string> = {
-  control: "Ctrl",
-  ctrl: "Ctrl",
-  alt: "Alt",
-  shift: "Maj",
-  super: "Win",
-  meta: "Win",
-  cmd: "Cmd",
-};
-
-function prettyHotkey(hotkey: string): string {
-  return hotkey
-    .split("+")
-    .map((raw) => {
-      const part = raw.trim();
-      const low = part.toLowerCase();
-      if (MOD_LABELS[low]) return MOD_LABELS[low];
-      if (low.startsWith("key")) return part.slice(3).toUpperCase();
-      if (low.startsWith("digit")) return part.slice(5);
-      return part.charAt(0).toUpperCase() + part.slice(1);
-    })
-    .join(" + ");
-}
-
-function hotkeyModeHint(mode: Settings["hotkey_mode"]): string {
-  return mode === "push_to_talk"
-    ? "maintien — la dictée est active tant que le raccourci est enfoncé"
-    : "bascule — un appui démarre la dictée, un second l'arrête";
-}
 
 // `created_at` est un UTC « YYYY-MM-DD HH:MM:SS » (sans marqueur de fuseau) :
 // on le rend explicitement UTC avant de le passer à `Date`.
@@ -127,7 +96,6 @@ function StatBlock({ label, stats }: { label: string; stats: { count: number; wo
 }
 
 export function HomePage() {
-  const [settings, setSettings] = useState<Settings | null>(null);
   const [recent, setRecent] = useState<HistoryEntry[] | null>(null);
   const [stats, setStats] = useState<HistoryStatsPair | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -155,18 +123,7 @@ export function HomePage() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    getSettings()
-      .then((s) => {
-        if (!cancelled) setSettings(s);
-      })
-      .catch(() => {
-        // Le rappel du raccourci est un plus, pas un bloquant.
-      });
     void reloadHistory();
-    return () => {
-      cancelled = true;
-    };
   }, [reloadHistory]);
 
   async function confirmClear() {
@@ -190,28 +147,29 @@ export function HomePage() {
         <h2 className="text-xl font-semibold">Bienvenue dans Vozel</h2>
         <p className="text-sm text-muted-foreground">
           Dictée voix-vers-texte, 100&nbsp;% locale. Placez le curseur où vous
-          voulez écrire, déclenchez le raccourci, parlez&nbsp;: le texte est
-          inséré à la volée.
+          voulez écrire, maintenez le raccourci, parlez&nbsp;: à la fin, le
+          texte est inséré à l'endroit du curseur.
         </p>
       </div>
 
-      {settings && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Raccourci de dictée</CardTitle>
-            <CardDescription>{hotkeyModeHint(settings.hotkey_mode)}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <kbd className="inline-flex items-center rounded-md border border-border bg-muted px-2.5 py-1 font-mono text-sm font-medium">
-              {prettyHotkey(settings.hotkey)}
-            </kbd>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Modifiable dans « Dictée ». Un redémarrage de l'app est nécessaire
-              pour qu'un nouveau raccourci prenne effet.
-            </p>
-          </CardContent>
-        </Card>
-      )}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Déclencheur de dictée</CardTitle>
+          <CardDescription>
+            Maintenez les deux touches ensemble pendant que vous parlez,
+            relâchez pour transcrire et insérer.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <kbd className="inline-flex items-center rounded-md border border-border bg-muted px-2.5 py-1 font-mono text-sm font-medium">
+            Ctrl + Win
+          </kbd>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Raccourci unique et fixe. Note&nbsp;: relâcher la touche Windows en
+            dernier peut ouvrir le menu Démarrer.
+          </p>
+        </CardContent>
+      </Card>
 
       {loadError ? (
         <p className="text-sm text-destructive">

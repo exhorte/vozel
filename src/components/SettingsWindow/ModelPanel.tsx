@@ -1,9 +1,12 @@
-// Réglages : moteur ASR local (§1.2), raccourci clavier global (§1.2),
-// — quand le cloud est activé — fournisseur cloud + clé API + avertissement
-// confidentialité (§2.3), switch « nettoyage IA local » (§2.4) et switch
-// « push-to-talk Ctrl+Win » (§2.5). Toute modification appelle `saveSettings`
-// immédiatement, persisté en SQLite côté backend
+// Réglages : moteur ASR local (§1.2) ; — quand le cloud est activé —
+// fournisseur cloud + clé API + avertissement confidentialité (§2.3) ;
+// switch « nettoyage IA local » (§2.4). Toute modification appelle
+// `saveSettings` immédiatement, persisté en SQLite côté backend
 // (`src-tauri/src/storage/settings.rs`, Spec_Backend_Desktop.md §2.1).
+//
+// Le déclenchement de la dictée n'est plus un réglage : maintien de Ctrl+Win,
+// câblé en dur (`hotkey::modifier_combo`, demande utilisateur 2026-09-02) —
+// ne reste ici qu'un rappel statique.
 //
 // Layout (§1.3) : groupes de réglages séparés par un `Separator` ; les
 // options techniques portent un `Tooltip` explicatif. La bascule local/cloud
@@ -32,7 +35,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Combobox, type ComboboxOption } from "@/components/ui/combobox";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
@@ -43,7 +45,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { getSettings, llmModelAvailable, saveSettings } from "@/lib/tauri";
-import type { HotkeyMode, Settings } from "@/types";
+import type { Settings } from "@/types";
 
 // Fournisseurs ASR cloud, tous branchés côté backend (`asr::cloud`,
 // Spec_Backend_Desktop.md §2.4 + §2.4.3 : Groq, OpenAI, Deepgram). Affichés
@@ -82,59 +84,6 @@ const ASR_ENGINES: Array<{
   },
 ];
 
-const HOTKEY_MODE_OPTIONS: Array<{
-  value: HotkeyMode;
-  label: string;
-  description: string;
-}> = [
-  {
-    value: "toggle",
-    label: "Bascule",
-    description: "Un appui démarre la dictée, un second appui l'arrête.",
-  },
-  {
-    value: "push_to_talk",
-    label: "Maintien",
-    description: "La dictée est active tant que le raccourci est maintenu.",
-  },
-];
-
-// Touches de modificateur seules : ignorées tant qu'aucune touche
-// "normale" n'est pressée en plus (on ne veut pas enregistrer "Control"
-// tout seul comme raccourci).
-const MODIFIER_CODES = new Set([
-  "ControlLeft",
-  "ControlRight",
-  "AltLeft",
-  "AltRight",
-  "ShiftLeft",
-  "ShiftRight",
-  "MetaLeft",
-  "MetaRight",
-]);
-
-// Construit une chaîne compatible `global_hotkey::hotkey::HotKey::from_str`
-// (voir src-tauri/src/hotkey/mod.rs) à partir d'un événement clavier DOM.
-// `event.code` (ex. "Space", "KeyA", "Digit1", "F5") correspond directement
-// à la syntaxe attendue côté Rust pour la touche principale.
-function hotkeyFromEvent(event: React.KeyboardEvent): string | null {
-  if (MODIFIER_CODES.has(event.code)) {
-    return null;
-  }
-  const mods: string[] = [];
-  if (event.ctrlKey) mods.push("control");
-  if (event.altKey) mods.push("alt");
-  if (event.shiftKey) mods.push("shift");
-  if (event.metaKey) mods.push("super");
-  if (mods.length === 0) {
-    // Un raccourci global sans modificateur intercepterait la touche dans
-    // toutes les apps — non supporté ici, cohérent avec le défaut
-    // "control+shift+Space" (voir storage::settings::Settings::default).
-    return null;
-  }
-  return [...mods, event.code].join("+");
-}
-
 // Libellé de champ avec, en option, une icône déclenchant un `Tooltip`
 // explicatif (§1.3 point 2 — options techniques).
 function FieldLabel({
@@ -169,10 +118,6 @@ function FieldLabel({
 
 export function ModelPanel() {
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [recording, setRecording] = useState(false);
-  // Enregistrement du raccourci Command Mode (§2.2) — même mécanique que le
-  // raccourci de dictée, champ distinct.
-  const [recordingCommand, setRecordingCommand] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   // `null` tant que la vérification n'a pas répondu — on n'affiche l'alerte
@@ -394,182 +339,24 @@ export function ModelPanel() {
 
           <Separator />
 
+          {/* Déclenchement de la dictée : maintien de Ctrl + Win, câblé en
+              dur (`hotkey::modifier_combo`, seul mécanisme depuis la demande
+              utilisateur du 2026-09-02). Plus aucun raccourci configurable
+              ici — simple rappel. */}
           <div className="flex flex-col gap-2">
-            <Label htmlFor="hotkey-input">Raccourci global</Label>
-            <Input
-              id="hotkey-input"
-              readOnly
-              value={recording ? "Appuyez sur une combinaison…" : settings.hotkey}
-              placeholder="Cliquez puis appuyez sur une combinaison"
-              onFocus={() => setRecording(true)}
-              onBlur={() => setRecording(false)}
-              onKeyDown={(event) => {
-                event.preventDefault();
-                if (event.code === "Escape") {
-                  setRecording(false);
-                  event.currentTarget.blur();
-                  return;
-                }
-                const next = hotkeyFromEvent(event);
-                if (next) {
-                  setRecording(false);
-                  event.currentTarget.blur();
-                  persist({ ...settings, hotkey: next });
-                }
-              }}
-            />
+            <Label>Déclencheur de dictée</Label>
+            <div>
+              <kbd className="inline-flex items-center rounded-md border border-input bg-muted px-2.5 py-1 font-mono text-sm font-medium">
+                Ctrl + Win
+              </kbd>
+            </div>
             <p className="text-sm text-muted-foreground">
-              Cliquez dans le champ puis appuyez sur la combinaison désirée
-              (au moins un modificateur : Ctrl, Alt, Maj ou Cmd/Win). Échap
-              pour annuler. Un redémarrage de l'app est nécessaire pour
-              qu'un nouveau raccourci prenne effet.
+              Maintenez Ctrl&nbsp;+&nbsp;Win pendant que vous parlez&nbsp;;
+              relâchez pour transcrire et insérer le texte à l'endroit du
+              curseur. Raccourci unique et fixe (non modifiable). Note&nbsp;:
+              relâcher la touche Windows en dernier peut ouvrir le menu
+              Démarrer.
             </p>
-          </div>
-
-          <Separator />
-
-          <div className="flex flex-col gap-2">
-            <Label>Mode du raccourci</Label>
-            <RadioGroup
-              value={settings.hotkey_mode}
-              onValueChange={(value) =>
-                persist({ ...settings, hotkey_mode: value as HotkeyMode })
-              }
-              className="flex flex-col gap-2"
-            >
-              {HOTKEY_MODE_OPTIONS.map((option) => (
-                <div key={option.value} className="flex items-start gap-2">
-                  <RadioGroupItem
-                    value={option.value}
-                    id={`hotkey-mode-${option.value}`}
-                    className="mt-0.5"
-                  />
-                  <Label
-                    htmlFor={`hotkey-mode-${option.value}`}
-                    className="flex flex-col items-start gap-0.5 font-normal"
-                  >
-                    <span>{option.label}</span>
-                    <span className="text-sm text-muted-foreground">
-                      {option.description}
-                    </span>
-                  </Label>
-                </div>
-              ))}
-            </RadioGroup>
-          </div>
-
-          <Separator />
-
-          {/* Push-to-talk Ctrl+Win seul (§2.5). Choix d'UX retenu : un simple
-              interrupteur, PAS un champ de capture. La combinaison est fixe
-              (Ctrl+Win, maintien = dictée) et non paramétrable — le champ de
-              capture au-dessus (`hotkeyFromEvent`) rejette de toute façon un
-              événement modificateur-seul (`MODIFIER_CODES`). Comme le cloud et
-              le LLM, l'effet est au redémarrage (installe un hook clavier bas
-              niveau au démarrage de l'app). */}
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex flex-col gap-0.5">
-                <FieldLabel
-                  htmlFor="ctrl-win-ptt"
-                  tooltip="En plus du raccourci ci-dessus : maintenir Ctrl + Win ensemble (sans autre touche) démarre la dictée, relâcher l'un des deux l'arrête. Utile car un raccourci « modificateurs seuls » n'est pas configurable dans le champ ci-dessus. Installe un hook clavier global — à n'activer que si vous vous en servez."
-                >
-                  Push-to-talk Ctrl+Win
-                </FieldLabel>
-                <p className="text-sm text-muted-foreground">
-                  Maintenir Ctrl&nbsp;+&nbsp;Win dicte, relâcher arrête.
-                  Désactivé par défaut.
-                </p>
-              </div>
-              <Switch
-                id="ctrl-win-ptt"
-                checked={settings.ctrl_win_ptt_enabled}
-                onCheckedChange={(checked) =>
-                  persist({ ...settings, ctrl_win_ptt_enabled: checked })
-                }
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Ce changement ne prend effet qu'au redémarrage de l'app.
-            </p>
-          </div>
-
-          <Separator />
-
-          {/* Command Mode (§2.2) : palette de reformulation d'une sélection,
-              déclenchée par un raccourci global dédié. Opt-in (raccourci
-              enregistré et modèle LLM chargé pour cet usage seulement si
-              activé), effet au redémarrage — même famille que le cloud, le LLM
-              de nettoyage et le push-to-talk Ctrl+Win. Nécessite le même
-              modèle LLM local que le nettoyage IA (~1,9 Go, models\llm\). */}
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex flex-col gap-0.5">
-                <FieldLabel
-                  htmlFor="command-mode-enabled"
-                  tooltip="Sélectionnez du texte dans n'importe quelle app, appuyez sur le raccourci Command Mode : une palette propose des reformulations rapides (plus concis, plus pro, en liste…). Le texte reformulé remplace la sélection. 100 % local — utilise le même modèle que le nettoyage IA (à placer dans %APPDATA%\com.exponentvalue.vozel\models\llm\)."
-                >
-                  Command Mode
-                </FieldLabel>
-                <p className="text-sm text-muted-foreground">
-                  Palette de reformulation d'une sélection via un raccourci
-                  dédié. Désactivé par défaut, 100&nbsp;% hors ligne.
-                </p>
-              </div>
-              <Switch
-                id="command-mode-enabled"
-                checked={settings.command_mode_enabled}
-                onCheckedChange={(checked) =>
-                  persist({ ...settings, command_mode_enabled: checked })
-                }
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Ce changement ne prend effet qu'au redémarrage de l'app.
-            </p>
-            {settings.command_mode_enabled && llmModelPresent === false && (
-              <p className="text-sm text-destructive">
-                Modèle introuvable dans <code>models\llm\</code> — le Command
-                Mode a besoin de ce modèle pour reformuler.
-              </p>
-            )}
-            {settings.command_mode_enabled && (
-              <div className="mt-1 flex flex-col gap-2">
-                <Label htmlFor="command-hotkey-input">
-                  Raccourci Command Mode
-                </Label>
-                <Input
-                  id="command-hotkey-input"
-                  readOnly
-                  value={
-                    recordingCommand
-                      ? "Appuyez sur une combinaison…"
-                      : settings.command_mode_hotkey
-                  }
-                  placeholder="Cliquez puis appuyez sur une combinaison"
-                  onFocus={() => setRecordingCommand(true)}
-                  onBlur={() => setRecordingCommand(false)}
-                  onKeyDown={(event) => {
-                    event.preventDefault();
-                    if (event.code === "Escape") {
-                      setRecordingCommand(false);
-                      event.currentTarget.blur();
-                      return;
-                    }
-                    const next = hotkeyFromEvent(event);
-                    if (next) {
-                      setRecordingCommand(false);
-                      event.currentTarget.blur();
-                      persist({ ...settings, command_mode_hotkey: next });
-                    }
-                  }}
-                />
-                <p className="text-sm text-muted-foreground">
-                  Distinct du raccourci de dictée. Au moins un modificateur ;
-                  Échap pour annuler. Effet au redémarrage.
-                </p>
-              </div>
-            )}
           </div>
 
           {saveError && (

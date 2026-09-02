@@ -1,5 +1,4 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { CommandPalette } from "./components/CommandPalette/CommandPalette";
 import { FloatingWidget } from "./components/FloatingWidget/FloatingWidget";
 import { SettingsWindow } from "./components/SettingsWindow/SettingsWindow";
 import { useDictationStatus } from "./state/store";
@@ -15,10 +14,6 @@ function App() {
 
   if (label === "overlay") {
     return <FloatingWidget status={status} />;
-  }
-
-  if (label === "command") {
-    return <CommandPalette />;
   }
 
   return <SettingsWindow />;
