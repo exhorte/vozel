@@ -49,47 +49,49 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Palette d'interface (demande utilisateur, Session 16) : deux couleurs
-   uniquement pour toutes les fenêtres/pages de l'app —
-   #BABBBF (sidebar + cards) et #EEEEF0 (fond des interfaces) — plus une
-   touche d'accentuation laissée à mon choix pour boutons/éléments actifs
-   (indigo #4F46E5, cohérent avec le style « outil pro » de la référence
-   Wispr Flow). `--destructive` (rouge) reste hors palette : c'est une
-   couleur sémantique (suppression/erreur), pas une couleur de surface.
+   Palette d'interface (demande utilisateur, Session 16, ajustée Session 19) :
+   deux couleurs uniquement pour toutes les fenêtres/pages de l'app —
+   #DADADD (sidebar + cards, ex-#BABBBF) et #EEEEF0 (fond des interfaces) —
+   sans aucune touche de couleur (l'indigo #4F46E5 de la Session 18 a été
+   retiré à la demande de l'utilisateur) : la « touche d'accentuation »
+   (boutons, item de nav actif, focus ring) est un gris anthracite mat
+   (#46474B) au lieu d'une teinte. `--destructive` (rouge) reste hors
+   palette : c'est une couleur sémantique (suppression/erreur), pas une
+   couleur de surface.
    --------------------------------------------------------------------------- */
 :root {
     --background: #eeeef0;
     --foreground: #1e1f22;
-    --card: #babbbf;
+    --card: #dadadd;
     --card-foreground: #1e1f22;
     --popover: #eeeef0;
     --popover-foreground: #1e1f22;
-    --primary: #4f46e5;
+    --primary: #46474b;
     --primary-foreground: #ffffff;
-    --secondary: #babbbf;
+    --secondary: #dadadd;
     --secondary-foreground: #1e1f22;
     --muted: #d6d7da;
     --muted-foreground: #6b6c70;
-    --accent: #4f46e5;
-    --accent-foreground: #ffffff;
+    --accent: #c7c8cc;
+    --accent-foreground: #1e1f22;
     --destructive: oklch(0.577 0.245 27.325);
     --border: #a9aaaf;
     --input: #a9aaaf;
-    --ring: #4f46e5;
+    --ring: #9a9ba0;
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
     --radius: 0.625rem;
-    --sidebar: #babbbf;
+    --sidebar: #dadadd;
     --sidebar-foreground: #1e1f22;
-    --sidebar-primary: #4f46e5;
+    --sidebar-primary: #46474b;
     --sidebar-primary-foreground: #ffffff;
     --sidebar-accent: #a9aaaf;
     --sidebar-accent-foreground: #1e1f22;
     --sidebar-border: #a9aaaf;
-    --sidebar-ring: #4f46e5;
+    --sidebar-ring: #9a9ba0;
 }
 
 .dark {
@@ -171,20 +173,21 @@ body,
 
 /* ---------------------------------------------------------------------------
    App shell de la fenêtre `main` (Réglages) — barre de titre custom +
-   sidebar repliable, inspiré de Wispr Flow. Palette deux couleurs (Session
-   16, demande utilisateur) : #BABBBF (sidebar + barre de titre + cards),
-   #EEEEF0 (fond de la zone de contenu) — plus l'accent indigo partagé avec
-   le reste de l'app pour l'item de nav actif.
+   sidebar repliable, inspiré de Wispr Flow. Palette deux couleurs, sans
+   aucune teinte (Session 16, ajustée Session 19, demande utilisateur) :
+   #DADADD (sidebar + barre de titre + cards, ex-#BABBBF), #EEEEF0 (fond de
+   la zone de contenu) — l'item de nav actif utilise le même gris anthracite
+   mat (#46474B) que `--primary` plutôt qu'une couleur d'accent.
    Portée limitée à `.app-shell` : n'affecte ni l'`overlay` ni la palette
    Command Mode.
    --------------------------------------------------------------------------- */
 .app-shell {
-  --vz-chrome: #babbbf;          /* sidebar + barre de titre */
+  --vz-chrome: #dadadd;          /* sidebar + barre de titre */
   --vz-chrome-border: rgba(0, 0, 0, 0.12);
   --vz-chrome-fg: #1e1f22;       /* texte/icônes sur le chrome clair */
   --vz-chrome-fg-muted: #55565b;
   --vz-chrome-hover: rgba(0, 0, 0, 0.07);
-  --vz-chrome-active: #4f46e5;   /* touche d'accentuation : item de nav actif */
+  --vz-chrome-active: #46474b;   /* item de nav actif : gris anthracite mat, pas de couleur */
   --vz-surface: #eeeef0;         /* fond de la zone de contenu */
 
   display: flex;

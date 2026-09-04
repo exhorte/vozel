@@ -953,3 +953,31 @@ c'est un choix technique mineur et réversible.
 
 **Aucun test manuel restant propre à ce changement** (vérifié visuellement en
 app réelle ci-dessus, changement de couleurs pur sans logique).
+
+### 2026-09-04 — Session 19 — palette 100 % grise (retrait de l'accent indigo)
+
+Demande utilisateur (hors spec, suite directe de la Session 18) : remplacer
+`#BABBBF` par `#DADADD` partout où utilisé (sidebar + cards), et retirer
+l'accent indigo `#4F46E5` — plus aucune couleur en dehors des nuances de gris.
+
+- `src/index.css` — `:root` : `--card`/`--secondary`/`--sidebar`/
+  `--sidebar-primary` passent de `#babbbf` à `#dadadd` (fond `#eeeef0`
+  inchangé). `--primary`/`--accent`/`--ring`/`--sidebar-ring`, qui portaient
+  l'indigo, remplacés par des nuances de gris neutre : `--primary`
+  `#46474b` (gris anthracite mat, texte blanc — boutons pleins, item de nav
+  actif), `--accent` `#c7c8cc` (gris clair, texte sombre — survols de menu/
+  combobox), `--ring` `#9a9ba0`. `.app-shell` (`--vz-chrome` → `#dadadd`,
+  `--vz-chrome-active` → `#46474b`, même gris que `--primary` pour rester
+  cohérent) mis à jour pareil. `--destructive` (rouge) laissé hors palette,
+  comme signalé Session 18 : couleur sémantique (suppression/erreur), pas
+  une couleur de surface — l'utilisateur n'a pas objecté depuis, je le
+  resignale ici au cas où « pas d'autre couleur » viserait aussi ce point.
+- `npx tsc --noEmit` vert · `npm run build` vert.
+- **Vérifié en app réelle** (CDP port 9333, mêmes scripts que Session 18) :
+  page Accueil (sidebar/cards `#DADADD`, item actif gris anthracite + texte
+  blanc, plus aucune trace d'indigo) et modale Réglages (onglet actif même
+  gris anthracite, survols en gris clair `#c7c8cc`). App fermée proprement.
+- Commit E : `[Frontend] Palette 100% grise : #BABBBF → #DADADD, retrait de l'accent indigo (demande utilisateur, Session 19)`.
+
+**Aucun test manuel restant propre à ce changement** (changement de couleurs
+pur, vérifié visuellement ci-dessus).
