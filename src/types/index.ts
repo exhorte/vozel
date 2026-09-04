@@ -14,6 +14,10 @@ export interface Settings {
   cloud_api_key: string;
   /** Nettoyage avancé par LLM local (§2.3). Opt-in ; effet au redémarrage. */
   llm_cleanup_enabled: boolean;
+  /** Langue de l'interface ("en" par défaut, ou "fr"). Demande utilisateur
+   *  2026-09-04 — voir src/lib/i18n.ts. N'affecte que le frontend ; les
+   *  messages d'erreur générés côté Rust restent en français. */
+  ui_language: "en" | "fr";
 }
 
 export interface TranscriptionResult {

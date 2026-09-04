@@ -23,13 +23,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { getSettings } from "@/lib/tauri";
+import { useTranslation } from "@/lib/i18n";
 import { ModelPanel } from "./ModelPanel";
 
 type Section = "general" | "privacy";
 
-const SECTIONS: Array<{ id: Section; label: string; icon: typeof SlidersHorizontal }> = [
-  { id: "general", label: "Général", icon: SlidersHorizontal },
-  { id: "privacy", label: "Données et confidentialité", icon: ShieldCheck },
+const SECTIONS: Array<{ id: Section; labelKey: string; icon: typeof SlidersHorizontal }> = [
+  { id: "general", labelKey: "settingsModal.section_general", icon: SlidersHorizontal },
+  { id: "privacy", labelKey: "settingsModal.section_privacy", icon: ShieldCheck },
 ];
 
 interface SettingsModalProps {
@@ -38,16 +39,15 @@ interface SettingsModalProps {
 }
 
 export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
+  const { t } = useTranslation();
   const [section, setSection] = useState<Section>("general");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex h-[85vh] max-w-3xl flex-col gap-0 p-0 sm:max-w-3xl">
         <DialogHeader className="border-b px-5 py-3">
-          <DialogTitle className="text-base">Réglages</DialogTitle>
-          <DialogDescription className="sr-only">
-            Configuration de Vozel : moteur de dictée et confidentialité.
-          </DialogDescription>
+          <DialogTitle className="text-base">{t("settingsModal.title")}</DialogTitle>
+          <DialogDescription className="sr-only">{t("settingsModal.desc")}</DialogDescription>
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1">
@@ -63,7 +63,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
                   className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground aria-[current=page]:bg-accent aria-[current=page]:font-medium aria-[current=page]:text-foreground"
                 >
                   <Icon className="size-4 shrink-0" />
-                  <span>{s.label}</span>
+                  <span>{t(s.labelKey)}</span>
                 </button>
               );
             })}
@@ -80,6 +80,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 }
 
 function PrivacySection() {
+  const { t } = useTranslation();
   const [cloudEnabled, setCloudEnabled] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -99,22 +100,22 @@ function PrivacySection() {
   return (
     <section className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
-        <h2 className="text-base font-semibold">Données et confidentialité</h2>
+        <h2 className="text-base font-semibold">{t("settingsModal.privacy_title")}</h2>
         <p className="text-sm text-muted-foreground">
-          Vozel conserve en local, sur cette machine&nbsp;: vos réglages, votre
-          dictionnaire personnel et l'historique de vos dictées (le texte
-          transcrit uniquement — jamais l'audio).
+          {t("settingsModal.privacy_body_base")}
           {cloudEnabled
-            ? " Le mode cloud étant activé, l'audio de chaque dictée est aussi envoyé au fournisseur choisi pour transcription."
-            : " Rien n'est envoyé sur Internet tant que le cloud reste désactivé."}
+            ? t("settingsModal.privacy_body_cloud")
+            : t("settingsModal.privacy_body_no_cloud")}
         </p>
       </div>
 
       <div className="rounded-md border border-border/60 p-3 text-sm text-muted-foreground">
-        L'historique se consulte, se recherche et s'efface depuis la page
-        <span className="font-medium text-foreground"> Historique</span> de la
-        barre latérale (chaque dictée peut aussi y être supprimée
-        individuellement).
+        {t("settingsModal.privacy_history_note_before")}
+        <span className="font-medium text-foreground">
+          {" "}
+          {t("settingsModal.privacy_history_note_link")}
+        </span>{" "}
+        {t("settingsModal.privacy_history_note_after")}
       </div>
     </section>
   );

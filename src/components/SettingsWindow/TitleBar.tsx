@@ -21,6 +21,7 @@ import {
   X,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useTranslation } from "@/lib/i18n";
 
 interface TitleBarProps {
   collapsed: boolean;
@@ -28,6 +29,7 @@ interface TitleBarProps {
 }
 
 export function TitleBar({ collapsed, onToggleSidebar }: TitleBarProps) {
+  const { t } = useTranslation();
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
@@ -60,8 +62,8 @@ export function TitleBar({ collapsed, onToggleSidebar }: TitleBarProps) {
       <button
         type="button"
         className="vz-iconbtn"
-        aria-label={collapsed ? "Déplier la barre latérale" : "Replier la barre latérale"}
-        title={collapsed ? "Déplier la barre latérale" : "Replier la barre latérale"}
+        aria-label={collapsed ? t("titlebar.expand") : t("titlebar.collapse")}
+        title={collapsed ? t("titlebar.expand") : t("titlebar.collapse")}
         onClick={onToggleSidebar}
       >
         <PanelLeft size={17} />
@@ -69,8 +71,8 @@ export function TitleBar({ collapsed, onToggleSidebar }: TitleBarProps) {
       <button
         type="button"
         className="vz-iconbtn"
-        aria-label="Compte (bientôt)"
-        title="Compte — bientôt"
+        aria-label={t("titlebar.account")}
+        title={t("titlebar.account_short")}
         disabled
       >
         <CircleUser size={17} />
@@ -81,8 +83,8 @@ export function TitleBar({ collapsed, onToggleSidebar }: TitleBarProps) {
       <button
         type="button"
         className="vz-iconbtn"
-        aria-label="Notifications (bientôt)"
-        title="Notifications — bientôt"
+        aria-label={t("titlebar.notifications")}
+        title={t("titlebar.notifications_short")}
         disabled
       >
         <Bell size={16} />
@@ -90,8 +92,8 @@ export function TitleBar({ collapsed, onToggleSidebar }: TitleBarProps) {
       <button
         type="button"
         className="vz-iconbtn vz-iconbtn--win"
-        aria-label="Réduire"
-        title="Réduire"
+        aria-label={t("titlebar.minimize")}
+        title={t("titlebar.minimize")}
         onClick={() => void win.minimize()}
       >
         <Minus size={16} />
@@ -99,8 +101,8 @@ export function TitleBar({ collapsed, onToggleSidebar }: TitleBarProps) {
       <button
         type="button"
         className="vz-iconbtn vz-iconbtn--win"
-        aria-label={maximized ? "Restaurer" : "Agrandir"}
-        title={maximized ? "Restaurer" : "Agrandir"}
+        aria-label={maximized ? t("titlebar.restore") : t("titlebar.maximize")}
+        title={maximized ? t("titlebar.restore") : t("titlebar.maximize")}
         onClick={() => void win.toggleMaximize()}
       >
         {maximized ? <Copy size={13} /> : <Square size={13} />}
@@ -108,8 +110,8 @@ export function TitleBar({ collapsed, onToggleSidebar }: TitleBarProps) {
       <button
         type="button"
         className="vz-iconbtn vz-iconbtn--win vz-iconbtn--close"
-        aria-label="Fermer"
-        title="Fermer"
+        aria-label={t("titlebar.close")}
+        title={t("titlebar.close")}
         onClick={() => void win.close()}
       >
         <X size={16} />

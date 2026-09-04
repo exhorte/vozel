@@ -22,12 +22,13 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
+import { useTranslation } from "@/lib/i18n";
 
 export type SettingsPage = "home" | "dictionary" | "history";
 
 interface NavItem {
   id: string;
-  label: string;
+  labelKey: string;
   icon: LucideIcon;
   /** Page routée dans la fenêtre principale. */
   page?: SettingsPage;
@@ -37,13 +38,13 @@ interface NavItem {
 }
 
 const TOP_ITEMS: NavItem[] = [
-  { id: "home", label: "Accueil", icon: Home, page: "home" },
-  { id: "dictionary", label: "Dictionnaire", icon: BookText, page: "dictionary" },
-  { id: "history", label: "Historique", icon: History, page: "history" },
+  { id: "home", labelKey: "sidebar.home", icon: Home, page: "home" },
+  { id: "dictionary", labelKey: "sidebar.dictionary", icon: BookText, page: "dictionary" },
+  { id: "history", labelKey: "sidebar.history", icon: History, page: "history" },
 ];
 
 const BOTTOM_ITEMS: NavItem[] = [
-  { id: "settings", label: "Réglages", icon: Settings, overlay: "settings" },
+  { id: "settings", labelKey: "sidebar.settings", icon: Settings, overlay: "settings" },
 ];
 
 interface SidebarProps {
@@ -66,21 +67,23 @@ function NavButton({
   onNavigate: (page: SettingsPage) => void;
   onOpenSettings: () => void;
 }) {
+  const { t } = useTranslation();
   const Icon = item.icon;
   const isActive = item.page !== undefined && item.page === active;
+  const label = t(item.labelKey);
   return (
     <button
       type="button"
       className="vz-navitem"
       aria-current={isActive ? "page" : undefined}
-      title={collapsed ? item.label : undefined}
+      title={collapsed ? label : undefined}
       onClick={() => {
         if (item.overlay === "settings") onOpenSettings();
         else if (item.page) onNavigate(item.page);
       }}
     >
       <Icon />
-      <span className="vz-navitem__label">{item.label}</span>
+      <span className="vz-navitem__label">{label}</span>
     </button>
   );
 }
@@ -91,6 +94,7 @@ export function Sidebar({
   onNavigate,
   onOpenSettings,
 }: SidebarProps) {
+  const { t } = useTranslation();
   const [version, setVersion] = useState<string | null>(null);
 
   useEffect(() => {
@@ -143,7 +147,7 @@ export function Sidebar({
         ))}
       </div>
 
-      {version && <div className="vz-version">Vozel v{version}</div>}
+      {version && <div className="vz-version">{t("sidebar.version", { version })}</div>}
     </nav>
   );
 }

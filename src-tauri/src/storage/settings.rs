@@ -34,6 +34,11 @@ pub struct Settings {
     /// Le modèle n'est chargé au démarrage que si ce drapeau est vrai ; un
     /// changement prend effet au redémarrage de l'app.
     pub llm_cleanup_enabled: bool,
+    /// Langue de l'interface (`"en"` ou `"fr"`), demande utilisateur
+    /// 2026-09-04. `"en"` par défaut. N'affecte que le frontend (React) —
+    /// les messages d'erreur générés côté Rust restent en français, non
+    /// traduits (signalé dans PROGRESS.md).
+    pub ui_language: String,
 }
 
 // `Debug` manuel : la clé API ne doit jamais apparaître dans un log, un
@@ -53,6 +58,7 @@ impl fmt::Debug for Settings {
                 },
             )
             .field("llm_cleanup_enabled", &self.llm_cleanup_enabled)
+            .field("ui_language", &self.ui_language)
             .finish()
     }
 }
@@ -70,6 +76,7 @@ impl Default for Settings {
             cloud_provider: "groq".into(),
             cloud_api_key: String::new(),
             llm_cleanup_enabled: false,
+            ui_language: "en".into(),
         }
     }
 }
@@ -81,7 +88,7 @@ impl Settings {
     /// qu'en test ou si la migration ponctuelle a échoué.
     pub async fn load_db(pool: &SqlitePool) -> Result<Self, String> {
         let row = sqlx::query(
-            "SELECT asr_provider, cloud_enabled, cloud_provider, cloud_api_key, llm_cleanup_enabled
+            "SELECT asr_provider, cloud_enabled, cloud_provider, cloud_api_key, llm_cleanup_enabled, ui_language
              FROM settings WHERE id = 1",
         )
         .fetch_optional(pool)
@@ -102,6 +109,7 @@ impl Settings {
             cloud_provider: row.try_get("cloud_provider").map_err(|e| e.to_string())?,
             cloud_api_key: row.try_get("cloud_api_key").map_err(|e| e.to_string())?,
             llm_cleanup_enabled: llm_cleanup_enabled != 0,
+            ui_language: row.try_get("ui_language").map_err(|e| e.to_string())?,
         })
     }
 
@@ -109,20 +117,22 @@ impl Settings {
     pub async fn save_db(&self, pool: &SqlitePool) -> Result<(), String> {
         sqlx::query(
             "INSERT INTO settings
-                 (id, asr_provider, cloud_enabled, cloud_provider, cloud_api_key, llm_cleanup_enabled)
-             VALUES (1, ?1, ?2, ?3, ?4, ?5)
+                 (id, asr_provider, cloud_enabled, cloud_provider, cloud_api_key, llm_cleanup_enabled, ui_language)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6)
              ON CONFLICT(id) DO UPDATE SET
                  asr_provider        = excluded.asr_provider,
                  cloud_enabled       = excluded.cloud_enabled,
                  cloud_provider      = excluded.cloud_provider,
                  cloud_api_key       = excluded.cloud_api_key,
-                 llm_cleanup_enabled = excluded.llm_cleanup_enabled",
+                 llm_cleanup_enabled = excluded.llm_cleanup_enabled,
+                 ui_language         = excluded.ui_language",
         )
         .bind(&self.asr_provider)
         .bind(self.cloud_enabled as i64)
         .bind(&self.cloud_provider)
         .bind(&self.cloud_api_key)
         .bind(self.llm_cleanup_enabled as i64)
+        .bind(&self.ui_language)
         .execute(pool)
         .await
         .map_err(|e| format!("écriture des réglages : {e}"))?;
@@ -220,6 +230,7 @@ mod tests {
                 cloud_provider: "openai".into(),
                 cloud_api_key: "sk-test-secret".into(),
                 llm_cleanup_enabled: true,
+                ui_language: "fr".into(),
             };
             written.save_db(&pool).await.expect("save");
             let reloaded = Settings::load_db(&pool).await.expect("load");

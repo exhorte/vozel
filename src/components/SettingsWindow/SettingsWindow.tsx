@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { LanguageProvider, useTranslation } from "@/lib/i18n";
 import { HomePage } from "./HomePage";
 import { DictionaryPanel } from "./DictionaryPanel";
 import { HistoryPage } from "./HistoryPage";
@@ -22,11 +23,6 @@ import { TitleBar } from "./TitleBar";
 import { Sidebar, type SettingsPage } from "./Sidebar";
 
 const COLLAPSE_KEY = "vozel:sidebar-collapsed";
-const PAGE_TITLES: Record<SettingsPage, string> = {
-  home: "Accueil",
-  dictionary: "Dictionnaire",
-  history: "Historique",
-};
 
 function readCollapsed(): boolean {
   try {
@@ -36,7 +32,8 @@ function readCollapsed(): boolean {
   }
 }
 
-export function SettingsWindow() {
+function SettingsWindowInner() {
+  const { t } = useTranslation();
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [page, setPage] = useState<SettingsPage>("home");
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -48,6 +45,12 @@ export function SettingsWindow() {
       /* stockage indisponible : préférence non persistée, pas bloquant */
     }
   }, [collapsed]);
+
+  const pageTitles: Record<SettingsPage, string> = {
+    home: t("page.home"),
+    dictionary: t("page.dictionary"),
+    history: t("page.history"),
+  };
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -68,7 +71,7 @@ export function SettingsWindow() {
           <main className="vz-page">
             <header className="shrink-0 border-b border-black/10 px-8 py-4">
               <h1 className="text-lg font-semibold leading-none text-foreground">
-                {PAGE_TITLES[page]}
+                {pageTitles[page]}
               </h1>
             </header>
             <ScrollArea className="min-h-0 flex-1">
@@ -85,5 +88,16 @@ export function SettingsWindow() {
       <SettingsModal open={settingsOpen} onOpenChange={setSettingsOpen} />
       <Toaster />
     </TooltipProvider>
+  );
+}
+
+// `LanguageProvider` doit englober tout l'arbre de la fenêtre `main` — d'où
+// ce petit composant hôte : `useTranslation()` (utilisé plus haut) ne peut
+// pas être appelé dans le composant qui monte son propre `Provider`.
+export function SettingsWindow() {
+  return (
+    <LanguageProvider>
+      <SettingsWindowInner />
+    </LanguageProvider>
   );
 }

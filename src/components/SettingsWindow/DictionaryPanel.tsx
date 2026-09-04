@@ -62,6 +62,7 @@ import {
   dictList,
   dictUpdate,
 } from "@/lib/tauri";
+import { useTranslation } from "@/lib/i18n";
 import type { DictionaryEntry } from "@/types";
 
 type SortKey = "from" | "to";
@@ -93,6 +94,7 @@ function readIntroDismissed(): boolean {
 }
 
 export function DictionaryPanel() {
+  const { lang, t } = useTranslation();
   const [entries, setEntries] = useState<DictionaryEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
@@ -136,12 +138,12 @@ export function DictionaryPanel() {
         )
       : entries;
     return [...filtered].sort((a, b) => {
-      const cmp = a[sortKey].localeCompare(b[sortKey], "fr", {
+      const cmp = a[sortKey].localeCompare(b[sortKey], lang, {
         sensitivity: "base",
       });
       return sortAsc ? cmp : -cmp;
     });
-  }, [entries, filter, sortKey, sortAsc]);
+  }, [entries, filter, sortKey, sortAsc, lang]);
 
   function toggleSort(key: SortKey) {
     if (key === sortKey) {
@@ -161,10 +163,10 @@ export function DictionaryPanel() {
     try {
       if (draft.id === undefined) {
         const created = await dictCreate(from, to);
-        toast.success(`« ${created.from} » ajouté au dictionnaire`);
+        toast.success(t("dict.toast_added", { from: created.from }));
       } else {
         await dictUpdate(draft.id, from, to);
-        toast.success("Entrée mise à jour");
+        toast.success(t("dict.toast_updated"));
       }
       setDraft(null);
       await reload();
@@ -181,7 +183,7 @@ export function DictionaryPanel() {
     setDeleting(null);
     try {
       await dictDelete(target.id);
-      toast.success(`« ${target.from} » supprimé`);
+      toast.success(t("dict.toast_deleted", { from: target.from }));
       await reload();
     } catch (e) {
       toast.error(String(e));
@@ -192,32 +194,22 @@ export function DictionaryPanel() {
     <section className="dictionary-panel flex flex-col gap-4">
       {introDismissed ? (
         <div className="flex flex-col gap-1">
-          <h2 className="text-base font-semibold">Dictionnaire personnalisé</h2>
-          <p className="text-sm text-muted-foreground">
-            Remplacements appliqués après la transcription, avant le nettoyage —
-            pour les noms propres et le jargon.
-          </p>
+          <h2 className="text-base font-semibold">{t("dict.title")}</h2>
+          <p className="text-sm text-muted-foreground">{t("dict.subtitle")}</p>
         </div>
       ) : (
         <Card className="relative">
           <button
             type="button"
             onClick={dismissIntro}
-            aria-label="Masquer cette carte"
+            aria-label={t("dict.intro_dismiss")}
             className="absolute top-2 right-2 rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground"
           >
             <X className="size-4" />
           </button>
           <CardContent className="flex flex-col gap-3 pr-8">
-            <h2 className="text-lg font-semibold tracking-tight">
-              Vozel écrit les mots comme vous les dites.
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Quand une transcription se trompe régulièrement sur un nom propre
-              ou un terme métier, ajoutez une correction&nbsp;: le texte reconnu
-              (à gauche) est remplacé par la forme voulue (à droite) dans chaque
-              dictée, avant le nettoyage. Insensible à la casse et aux espaces.
-            </p>
+            <h2 className="text-lg font-semibold tracking-tight">{t("dict.intro_title")}</h2>
+            <p className="text-sm text-muted-foreground">{t("dict.intro_body")}</p>
             <div className="flex flex-wrap gap-1.5">
               {EXAMPLE_PAIRS.map(([from, to]) => (
                 <span
@@ -233,7 +225,7 @@ export function DictionaryPanel() {
             <div>
               <Button size="sm" onClick={() => setDraft({ from: "", to: "" })}>
                 <Plus className="size-4" />
-                Ajouter une correction
+                {t("dict.intro_add")}
               </Button>
             </div>
           </CardContent>
@@ -242,11 +234,11 @@ export function DictionaryPanel() {
 
       <div className="flex items-center gap-2">
         <Input
-          placeholder="Filtrer…"
+          placeholder={t("dict.filter_placeholder")}
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           className="h-9 max-w-xs"
-          aria-label="Filtrer les entrées du dictionnaire"
+          aria-label={t("dict.filter_aria")}
         />
         <Button
           size="sm"
@@ -254,20 +246,19 @@ export function DictionaryPanel() {
           onClick={() => setDraft({ from: "", to: "" })}
         >
           <Plus className="size-4" />
-          Ajouter
+          {t("dict.add")}
         </Button>
       </div>
 
       {loadError ? (
         <p className="text-sm text-destructive">
-          Impossible de charger le dictionnaire : {loadError}
+          {t("dict.load_error", { error: loadError })}
         </p>
       ) : entries === null ? (
-        <p className="text-sm text-muted-foreground">Chargement…</p>
+        <p className="text-sm text-muted-foreground">{t("dict.loading")}</p>
       ) : entries.length === 0 ? (
         <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-          Aucune entrée. Ajoutez-en une pour corriger automatiquement un mot
-          mal transcrit.
+          {t("dict.empty")}
         </p>
       ) : (
         <div className="overflow-x-auto rounded-md border">
@@ -275,13 +266,13 @@ export function DictionaryPanel() {
             <TableHeader>
               <TableRow>
                 <SortableHead
-                  label="Reconnu"
+                  label={t("dict.col_from")}
                   active={sortKey === "from"}
                   asc={sortAsc}
                   onClick={() => toggleSort("from")}
                 />
                 <SortableHead
-                  label="Corrigé en"
+                  label={t("dict.col_to")}
                   active={sortKey === "to"}
                   asc={sortAsc}
                   onClick={() => toggleSort("to")}
@@ -301,7 +292,7 @@ export function DictionaryPanel() {
                           variant="ghost"
                           size="icon"
                           className="size-8"
-                          aria-label={`Actions pour « ${entry.from} »`}
+                          aria-label={t("dict.actions_for", { from: entry.from })}
                         >
                           <MoreHorizontal className="size-4" />
                         </Button>
@@ -316,13 +307,13 @@ export function DictionaryPanel() {
                             })
                           }
                         >
-                          Modifier
+                          {t("dict.edit")}
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           variant="destructive"
                           onSelect={() => setDeleting(entry)}
                         >
-                          Supprimer
+                          {t("dict.delete")}
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -335,7 +326,7 @@ export function DictionaryPanel() {
                     colSpan={3}
                     className="text-center text-sm text-muted-foreground"
                   >
-                    Aucune entrée ne correspond à « {filter} ».
+                    {t("dict.no_match", { filter })}
                   </TableCell>
                 </TableRow>
               )}
@@ -354,12 +345,9 @@ export function DictionaryPanel() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {draft?.id === undefined ? "Ajouter une entrée" : "Modifier l'entrée"}
+              {draft?.id === undefined ? t("dict.dialog_add_title") : t("dict.dialog_edit_title")}
             </DialogTitle>
-            <DialogDescription>
-              Le texte « reconnu » est remplacé par le texte « corrigé » dans
-              chaque dictée (insensible à la casse et aux espaces).
-            </DialogDescription>
+            <DialogDescription>{t("dict.dialog_desc")}</DialogDescription>
           </DialogHeader>
           <form
             className="flex flex-col gap-4"
@@ -369,7 +357,7 @@ export function DictionaryPanel() {
             }}
           >
             <div className="flex flex-col gap-2">
-              <Label htmlFor="dict-from">Reconnu</Label>
+              <Label htmlFor="dict-from">{t("dict.field_from")}</Label>
               <Input
                 id="dict-from"
                 autoFocus
@@ -381,7 +369,7 @@ export function DictionaryPanel() {
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label htmlFor="dict-to">Corrigé en</Label>
+              <Label htmlFor="dict-to">{t("dict.field_to")}</Label>
               <Input
                 id="dict-to"
                 value={draft?.to ?? ""}
@@ -397,7 +385,7 @@ export function DictionaryPanel() {
                 variant="outline"
                 onClick={() => setDraft(null)}
               >
-                Annuler
+                {t("dict.cancel")}
               </Button>
               <Button
                 type="submit"
@@ -407,7 +395,7 @@ export function DictionaryPanel() {
                   !draft?.to.trim()
                 }
               >
-                {draft?.id === undefined ? "Ajouter" : "Enregistrer"}
+                {draft?.id === undefined ? t("dict.add") : t("dict.save")}
               </Button>
             </DialogFooter>
           </form>
@@ -423,19 +411,21 @@ export function DictionaryPanel() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Supprimer cette entrée ?</AlertDialogTitle>
+            <AlertDialogTitle>{t("dict.delete_confirm_title")}</AlertDialogTitle>
             <AlertDialogDescription>
-              « {deleting?.from} » → « {deleting?.to} » ne sera plus appliqué
-              aux dictées. Cette action est définitive.
+              {t("dict.delete_confirm_body", {
+                from: deleting?.from ?? "",
+                to: deleting?.to ?? "",
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogCancel>{t("dict.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDelete}
               className="bg-destructive text-white hover:bg-destructive/90"
             >
-              Supprimer
+              {t("dict.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

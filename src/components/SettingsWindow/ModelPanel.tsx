@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { getSettings, llmModelAvailable, saveSettings } from "@/lib/tauri";
+import { useTranslation, type Lang } from "@/lib/i18n";
 import type { Settings } from "@/types";
 
 // Fournisseurs ASR cloud, tous branchés côté backend (`asr::cloud`,
@@ -53,6 +54,7 @@ import type { Settings } from "@/types";
 // dans un `Combobox` shadcn (`command` + `popover`) conformément à
 // Spec_Frontend.md §2.3 — le `Select` précédent (avec OpenAI/Deepgram
 // désactivés) datait d'avant l'implémentation des deux autres fournisseurs.
+// Noms de marque + modèle : pas traduits (identiques en anglais).
 const CLOUD_PROVIDERS: ComboboxOption[] = [
   { value: "groq", label: "Groq — Whisper large v3 turbo" },
   { value: "openai", label: "OpenAI — Whisper-1" },
@@ -66,21 +68,19 @@ const CLOUD_PROVIDERS: ComboboxOption[] = [
 // whisper.cpp reste un module stub documenté, pas encore branché.
 const ASR_ENGINES: Array<{
   value: string;
-  label: string;
-  description: string;
+  labelKey: string;
+  descriptionKey: string;
   disabled?: boolean;
 }> = [
   {
     value: "parakeet-tdt",
-    label: "Parakeet-TDT (recommandé)",
-    description:
-      "Modèle NVIDIA multilingue (ONNX INT8, ~670 Mo). Le plus rapide et le plus précis en français sur notre benchmark interne — moteur par défaut.",
+    labelKey: "model.asr_parakeet_label",
+    descriptionKey: "model.asr_parakeet_desc",
   },
   {
     value: "whisper-cpp",
-    label: "whisper.cpp (bientôt disponible)",
-    description:
-      "Alternative plus légère mais plus lente et moins précise en français sur notre benchmark interne. Pas encore branché côté backend.",
+    labelKey: "model.asr_whisper_cpp_label",
+    descriptionKey: "model.asr_whisper_cpp_desc",
     disabled: true,
   },
 ];
@@ -96,6 +96,7 @@ function FieldLabel({
   children: React.ReactNode;
   tooltip?: string;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="flex items-center gap-1.5">
       <Label htmlFor={htmlFor}>{children}</Label>
@@ -105,7 +106,7 @@ function FieldLabel({
             <button
               type="button"
               className="text-muted-foreground transition-colors hover:text-foreground"
-              aria-label="Plus d'informations"
+              aria-label={t("model.tooltip_more_info")}
             >
               <Info className="size-3.5" />
             </button>
@@ -118,6 +119,7 @@ function FieldLabel({
 }
 
 export function ModelPanel() {
+  const { t, setLang } = useTranslation();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -159,10 +161,18 @@ export function ModelPanel() {
     }
   }
 
+  // La langue est un cas particulier : `setLang` (contexte `i18n.tsx`) met
+  // à jour l'affichage de toute la fenêtre immédiatement, en plus de
+  // persister via `persist` ci-dessus comme les autres réglages.
+  function changeLanguage(value: Lang) {
+    setLang(value);
+    void persist({ ...settings!, ui_language: value });
+  }
+
   if (loadError) {
     return (
       <section className="model-panel text-sm text-destructive">
-        Impossible de charger les réglages : {loadError}
+        {t("model.load_error", { error: loadError })}
       </section>
     );
   }
@@ -170,28 +180,46 @@ export function ModelPanel() {
   if (!settings) {
     return (
       <section className="model-panel text-sm text-muted-foreground">
-        Chargement des réglages…
+        {t("model.loading")}
       </section>
     );
   }
 
   return (
-    <section className="model-panel">
+    <section className="model-panel flex flex-col gap-6">
       <Card>
         <CardHeader>
-          <CardTitle>Moteur de dictée</CardTitle>
-          <CardDescription>
-            Choix du moteur de reconnaissance vocale local et du raccourci
-            global d'activation.
-          </CardDescription>
+          <CardTitle>{t("model.language_card_title")}</CardTitle>
+          <CardDescription>{t("model.language_card_desc")}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="ui-language">{t("model.language_label")}</Label>
+            <Select
+              value={settings.ui_language}
+              onValueChange={(value) => changeLanguage(value as Lang)}
+            >
+              <SelectTrigger id="ui-language" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="en">{t("model.language_en")}</SelectItem>
+                <SelectItem value="fr">{t("model.language_fr")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("model.card_title")}</CardTitle>
+          <CardDescription>{t("model.card_desc")}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
           <div className="flex flex-col gap-2">
-            <FieldLabel
-              htmlFor="asr-engine"
-              tooltip="Traitement 100 % sur votre machine : l'audio ne quitte jamais l'appareil, la dictée fonctionne hors ligne."
-            >
-              Moteur ASR local
+            <FieldLabel htmlFor="asr-engine" tooltip={t("model.asr_engine_tooltip")}>
+              {t("model.asr_engine_label")}
             </FieldLabel>
             <Select
               value={settings.asr_provider}
@@ -209,16 +237,16 @@ export function ModelPanel() {
                     value={engine.value}
                     disabled={engine.disabled}
                   >
-                    {engine.label}
+                    {t(engine.labelKey)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <p className="text-sm text-muted-foreground">
-              {
+              {t(
                 ASR_ENGINES.find((e) => e.value === settings.asr_provider)
-                  ?.description
-              }
+                  ?.descriptionKey ?? "",
+              )}
             </p>
           </div>
 
@@ -226,15 +254,10 @@ export function ModelPanel() {
 
           <div className="flex items-center justify-between gap-4">
             <div className="flex flex-col gap-0.5">
-              <FieldLabel
-                htmlFor="cloud-enabled"
-                tooltip="En local, l'audio ne quitte jamais l'appareil. Le cloud peut être plus rapide ou plus précis, mais envoie l'audio à un fournisseur tiers — désactivé par défaut."
-              >
-                Utiliser le cloud
+              <FieldLabel htmlFor="cloud-enabled" tooltip={t("model.cloud_enabled_tooltip")}>
+                {t("model.cloud_enabled_label")}
               </FieldLabel>
-              <p className="text-sm text-muted-foreground">
-                Désactivé par défaut — Vozel fonctionne entièrement en local.
-              </p>
+              <p className="text-sm text-muted-foreground">{t("model.cloud_enabled_desc")}</p>
             </div>
             <Switch
               id="cloud-enabled"
@@ -249,17 +272,12 @@ export function ModelPanel() {
             <div className="flex flex-col gap-4 rounded-md border border-border/60 bg-muted/30 p-3">
               <Alert variant="destructive">
                 <TriangleAlert />
-                <AlertTitle>L'audio quitte votre appareil</AlertTitle>
-                <AlertDescription>
-                  Quand le cloud est activé, l'audio dicté est envoyé au
-                  fournisseur choisi pour transcription. Vozel reste
-                  local&nbsp;par défaut&nbsp;; n'activez le cloud que si vous
-                  l'assumez.
-                </AlertDescription>
+                <AlertTitle>{t("model.cloud_alert_title")}</AlertTitle>
+                <AlertDescription>{t("model.cloud_alert_desc")}</AlertDescription>
               </Alert>
 
               <div className="flex flex-col gap-2">
-                <Label htmlFor="cloud-provider">Fournisseur</Label>
+                <Label htmlFor="cloud-provider">{t("model.cloud_provider_label")}</Label>
                 <Combobox
                   id="cloud-provider"
                   options={CLOUD_PROVIDERS}
@@ -267,14 +285,14 @@ export function ModelPanel() {
                   onValueChange={(value) =>
                     persist({ ...settings, cloud_provider: value })
                   }
-                  placeholder="Choisir un fournisseur"
-                  searchPlaceholder="Filtrer les fournisseurs…"
-                  emptyText="Aucun fournisseur."
+                  placeholder={t("model.cloud_provider_placeholder")}
+                  searchPlaceholder={t("model.cloud_provider_search_placeholder")}
+                  emptyText={t("model.cloud_provider_empty")}
                 />
               </div>
 
               <div className="flex flex-col gap-2">
-                <Label htmlFor="cloud-api-key">Clé API</Label>
+                <Label htmlFor="cloud-api-key">{t("model.cloud_api_key_label")}</Label>
                 <Input
                   id="cloud-api-key"
                   type="password"
@@ -286,12 +304,7 @@ export function ModelPanel() {
                     persist({ ...settings, cloud_api_key: e.target.value })
                   }
                 />
-                <p className="text-sm text-muted-foreground">
-                  Votre propre clé, stockée en local sur cette machine et
-                  jamais journalisée. Pour Groq&nbsp;:
-                  console.groq.com/keys. Prise en compte à la dictée
-                  suivante, sans redémarrage.
-                </p>
+                <p className="text-sm text-muted-foreground">{t("model.cloud_api_key_note")}</p>
               </div>
             </div>
           )}
@@ -306,16 +319,10 @@ export function ModelPanel() {
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-4">
               <div className="flex flex-col gap-0.5">
-                <FieldLabel
-                  htmlFor="llm-cleanup-enabled"
-                  tooltip="Un petit modèle de langue tourne 100 % en local pour corriger ponctuation, accents et accords au-delà des règles simples. Le modèle (~1,9 Go) n'est pas fourni avec l'app : à placer manuellement dans %APPDATA%\com.exponentvalue.vozel\models\llm\ (procédure dans la doc du projet, PROGRESS.md)."
-                >
-                  Nettoyage IA local
+                <FieldLabel htmlFor="llm-cleanup-enabled" tooltip={t("model.llm_cleanup_tooltip")}>
+                  {t("model.llm_cleanup_label")}
                 </FieldLabel>
-                <p className="text-sm text-muted-foreground">
-                  Correction avancée par un modèle de langue local, en plus
-                  des règles. Désactivé par défaut, 100&nbsp;% hors ligne.
-                </p>
+                <p className="text-sm text-muted-foreground">{t("model.llm_cleanup_desc")}</p>
               </div>
               <Switch
                 id="llm-cleanup-enabled"
@@ -325,16 +332,9 @@ export function ModelPanel() {
                 }
               />
             </div>
-            <p className="text-xs text-muted-foreground">
-              Ce changement ne prend effet qu'au redémarrage de l'app — le
-              modèle n'est chargé qu'au démarrage.
-            </p>
+            <p className="text-xs text-muted-foreground">{t("model.llm_cleanup_restart_note")}</p>
             {settings.llm_cleanup_enabled && llmModelPresent === false && (
-              <p className="text-sm text-destructive">
-                Modèle introuvable dans <code>models\llm\</code>. Le nettoyage
-                retombe sur les règles simples tant que le modèle n'est pas
-                installé à cet emplacement.
-              </p>
+              <p className="text-sm text-destructive">{t("model.llm_model_missing")}</p>
             )}
           </div>
 
@@ -345,24 +345,18 @@ export function ModelPanel() {
               utilisateur du 2026-09-02). Plus aucun raccourci configurable
               ici — simple rappel. */}
           <div className="flex flex-col gap-2">
-            <Label>Déclencheur de dictée</Label>
+            <Label>{t("model.trigger_label")}</Label>
             <div>
               <kbd className="inline-flex items-center rounded-md border border-input bg-muted px-2.5 py-1 font-mono text-sm font-medium">
                 Ctrl + Win
               </kbd>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Maintenez Ctrl&nbsp;+&nbsp;Win pendant que vous parlez&nbsp;;
-              relâchez pour transcrire et insérer le texte à l'endroit du
-              curseur. Raccourci unique et fixe (non modifiable). Note&nbsp;:
-              relâcher la touche Windows en dernier peut ouvrir le menu
-              Démarrer.
-            </p>
+            <p className="text-sm text-muted-foreground">{t("model.trigger_body")}</p>
           </div>
 
           {saveError && (
             <p className="text-sm text-destructive">
-              Échec de la sauvegarde : {saveError}
+              {t("model.save_error", { error: saveError })}
             </p>
           )}
         </CardContent>

@@ -34,6 +34,7 @@ import {
   historyList,
   historySearch,
 } from "@/lib/tauri";
+import { localeTag, useTranslation, type Lang } from "@/lib/i18n";
 import type { HistoryEntry } from "@/types";
 
 const LIMIT = 100;
@@ -47,8 +48,8 @@ function parseUtc(created_at: string): Date {
   return new Date(created_at.replace(" ", "T") + "Z");
 }
 
-function localTime(d: Date): string {
-  return d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+function localTime(d: Date, lang: Lang): string {
+  return d.toLocaleTimeString(localeTag(lang), { hour: "2-digit", minute: "2-digit" });
 }
 
 function preview(text: string): string {
@@ -68,7 +69,11 @@ function durationLabel(ms: number | null): string | null {
 // jours), puis par date pour le plus ancien. Bornes en fuseau local, même
 // logique que `historyStats`. Les entrées arrivent déjà triées récent→ancien,
 // donc les groupes apparaissent naturellement dans le bon ordre.
-function groupByDate(entries: HistoryEntry[]): Array<{ label: string; items: HistoryEntry[] }> {
+function groupByDate(
+  entries: HistoryEntry[],
+  lang: Lang,
+  t: (key: string) => string,
+): Array<{ label: string; items: HistoryEntry[] }> {
   const now = new Date();
   const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const startYesterday = startToday - 86_400_000;
@@ -79,11 +84,11 @@ function groupByDate(entries: HistoryEntry[]): Array<{ label: string; items: His
   for (const entry of entries) {
     const ts = parseUtc(entry.created_at).getTime();
     let label: string;
-    if (ts >= startToday) label = "Aujourd'hui";
-    else if (ts >= startYesterday) label = "Hier";
-    else if (ts >= startWeek) label = "Cette semaine";
+    if (ts >= startToday) label = t("history.group_today");
+    else if (ts >= startYesterday) label = t("history.group_yesterday");
+    else if (ts >= startWeek) label = t("history.group_this_week");
     else
-      label = parseUtc(entry.created_at).toLocaleDateString("fr-FR", {
+      label = parseUtc(entry.created_at).toLocaleDateString(localeTag(lang), {
         day: "numeric",
         month: "long",
         year: "numeric",
@@ -100,6 +105,7 @@ function groupByDate(entries: HistoryEntry[]): Array<{ label: string; items: His
 }
 
 export function HistoryPage() {
+  const { lang, t, tp } = useTranslation();
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [rawQuery, setRawQuery] = useState("");
@@ -112,8 +118,8 @@ export function HistoryPage() {
 
   // Debounce du champ de recherche.
   useEffect(() => {
-    const t = setTimeout(() => setQuery(rawQuery.trim()), SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setQuery(rawQuery.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
   }, [rawQuery]);
 
   const reload = useCallback(async () => {
@@ -150,16 +156,16 @@ export function HistoryPage() {
   }, []);
 
   const groups = useMemo(
-    () => (entries ? groupByDate(entries) : []),
-    [entries],
+    () => (entries ? groupByDate(entries, lang, t) : []),
+    [entries, lang, t],
   );
 
   async function copy(text: string) {
     try {
       await navigator.clipboard.writeText(text);
-      toast.success("Texte copié");
+      toast.success(t("history.toast_copied"));
     } catch {
-      toast.error("Copie impossible");
+      toast.error(t("history.toast_copy_failed"));
     }
   }
 
@@ -170,7 +176,7 @@ export function HistoryPage() {
     try {
       await historyDelete(target.id);
       setEntries((prev) => prev?.filter((e) => e.id !== target.id) ?? prev);
-      toast.success("Dictée supprimée");
+      toast.success(t("history.toast_deleted"));
     } catch (e) {
       toast.error(String(e));
     }
@@ -182,7 +188,7 @@ export function HistoryPage() {
       await historyClear();
       setEntries([]);
       setClearOpen(false);
-      toast.success("Historique effacé");
+      toast.success(t("history.toast_cleared"));
     } catch (e) {
       toast.error(String(e));
     } finally {
@@ -195,11 +201,9 @@ export function HistoryPage() {
   return (
     <section className="history-page flex flex-col gap-4">
       <div className="flex flex-col gap-1">
-        <h2 className="text-xl font-semibold">Historique</h2>
+        <h2 className="text-xl font-semibold">{t("history.title")}</h2>
         <p className="text-sm text-muted-foreground">
-          {cloudEnabled
-            ? "Vos dictées sont enregistrées localement sur cet appareil. Le mode cloud étant actif, l'audio est envoyé à un fournisseur tiers au moment de la transcription (le texte, lui, reste local)."
-            : "Vos dictées sont enregistrées localement sur cet appareil et n'en sortent pas."}
+          {cloudEnabled ? t("history.subtitle_cloud") : t("history.subtitle_local")}
         </p>
       </div>
 
@@ -208,23 +212,21 @@ export function HistoryPage() {
         <Input
           value={rawQuery}
           onChange={(e) => setRawQuery(e.target.value)}
-          placeholder="Rechercher dans l'historique…"
+          placeholder={t("history.search_placeholder")}
           className="h-9 pl-8"
-          aria-label="Rechercher dans l'historique"
+          aria-label={t("history.search_aria")}
         />
       </div>
 
       {loadError ? (
         <p className="text-sm text-destructive">
-          Impossible de charger l'historique&nbsp;: {loadError}
+          {t("history.load_error", { error: loadError })}
         </p>
       ) : entries === null ? (
-        <p className="text-sm text-muted-foreground">Chargement…</p>
+        <p className="text-sm text-muted-foreground">{t("history.loading")}</p>
       ) : entries.length === 0 ? (
         <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-          {isSearching
-            ? `Aucune dictée ne contient « ${query} ».`
-            : "Aucune dictée pour l'instant. Vos dictées apparaîtront ici au fil de leur enregistrement."}
+          {isSearching ? t("history.no_match", { query }) : t("history.empty")}
         </p>
       ) : (
         <div className="flex flex-col gap-5">
@@ -243,12 +245,12 @@ export function HistoryPage() {
                       className="flex items-start gap-3 p-3"
                     >
                       <span className="mt-0.5 w-12 shrink-0 text-xs tabular-nums text-muted-foreground">
-                        {localTime(d)}
+                        {localTime(d, lang)}
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm text-foreground">{preview(entry.text)}</p>
                         <p className="mt-0.5 text-xs text-muted-foreground">
-                          {entry.word_count} mot{entry.word_count > 1 ? "s" : ""}
+                          {tp(entry.word_count, "history.word")}
                           {dur && ` · ${dur}`}
                         </p>
                       </div>
@@ -257,7 +259,7 @@ export function HistoryPage() {
                           variant="ghost"
                           size="icon"
                           className="size-8 text-muted-foreground"
-                          aria-label="Copier le texte"
+                          aria-label={t("history.copy_text")}
                           onClick={() => void copy(entry.text)}
                         >
                           <Copy className="size-4" />
@@ -268,20 +270,20 @@ export function HistoryPage() {
                               variant="ghost"
                               size="icon"
                               className="size-8 text-muted-foreground"
-                              aria-label="Autres actions"
+                              aria-label={t("history.more_actions")}
                             >
                               <MoreHorizontal className="size-4" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
                             <DropdownMenuItem onSelect={() => void copy(entry.text)}>
-                              Copier le texte
+                              {t("history.copy_text")}
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               variant="destructive"
                               onSelect={() => setDeleting(entry)}
                             >
-                              Supprimer
+                              {t("history.delete")}
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -303,19 +305,16 @@ export function HistoryPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Supprimer cette dictée&nbsp;?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Elle sera retirée définitivement de l'historique local. Cette
-              action est irréversible.
-            </AlertDialogDescription>
+            <AlertDialogTitle>{t("history.delete_confirm_title")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("history.delete_confirm_body")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogCancel>{t("history.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDelete}
               className="bg-destructive text-white hover:bg-destructive/90"
             >
-              Supprimer
+              {t("history.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -330,7 +329,7 @@ export function HistoryPage() {
             onClick={() => setClearOpen(true)}
           >
             <Trash2 className="size-4" />
-            Effacer tout l'historique
+            {t("history.clear_all")}
           </Button>
         </div>
       )}
@@ -338,21 +337,17 @@ export function HistoryPage() {
       <AlertDialog open={clearOpen} onOpenChange={setClearOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Effacer tout l'historique&nbsp;?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Toutes les dictées enregistrées localement seront supprimées
-              définitivement, y compris leur texte. Cette action est
-              irréversible.
-            </AlertDialogDescription>
+            <AlertDialogTitle>{t("history.clear_all_confirm_title")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("history.clear_all_confirm_body")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogCancel>{t("history.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmClearAll}
               disabled={clearing}
               className="bg-destructive text-white hover:bg-destructive/90"
             >
-              Tout effacer
+              {t("history.clear_all_confirm_action")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

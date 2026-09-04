@@ -22,6 +22,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { historyList, historyStats } from "@/lib/tauri";
+import { localeTag, useTranslation, type Lang } from "@/lib/i18n";
 import type { HistoryEntry, HistoryStatsPair } from "@/types";
 import type { SettingsPage } from "./Sidebar";
 
@@ -34,18 +35,22 @@ function parseUtc(created_at: string): number {
   return new Date(created_at.replace(" ", "T") + "Z").getTime();
 }
 
-function relativeTime(created_at: string): string {
+function relativeTime(
+  created_at: string,
+  lang: Lang,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): string {
   const then = parseUtc(created_at);
   if (Number.isNaN(then)) return "";
   const sec = Math.round((Date.now() - then) / 1000);
-  if (sec < 45) return "à l'instant";
+  if (sec < 45) return t("home.time_just_now");
   const min = Math.round(sec / 60);
-  if (min < 60) return `il y a ${min} min`;
+  if (min < 60) return t("home.time_minutes_ago", { n: min });
   const hours = Math.round(min / 60);
-  if (hours < 24) return `il y a ${hours} h`;
+  if (hours < 24) return t("home.time_hours_ago", { n: hours });
   const days = Math.round(hours / 24);
-  if (days < 7) return `il y a ${days} j`;
-  return new Date(then).toLocaleDateString("fr-FR", {
+  if (days < 7) return t("home.time_days_ago", { n: days });
+  return new Date(then).toLocaleDateString(localeTag(lang), {
     day: "numeric",
     month: "short",
   });
@@ -56,21 +61,24 @@ function preview(text: string): string {
   return flat.length > PREVIEW_MAX ? flat.slice(0, PREVIEW_MAX).trimEnd() + "…" : flat;
 }
 
-function plural(n: number, singular: string, plural: string): string {
-  return `${n} ${n > 1 ? plural : singular}`;
-}
-
-function StatBlock({ label, stats }: { label: string; stats: { count: number; word_count: number } }) {
+function StatBlock({
+  label,
+  stats,
+}: {
+  label: string;
+  stats: { count: number; word_count: number };
+}) {
+  const { tp } = useTranslation();
   return (
     <div className="flex flex-col gap-0.5 rounded-md border border-border/60 bg-muted/30 p-3">
       <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </span>
       <span className="text-2xl font-semibold tabular-nums">
-        {plural(stats.count, "dictée", "dictées")}
+        {tp(stats.count, "home.stat_dictation")}
       </span>
       <span className="text-sm text-muted-foreground">
-        {plural(stats.word_count, "mot", "mots")}
+        {tp(stats.word_count, "home.stat_word")}
       </span>
     </div>
   );
@@ -81,6 +89,7 @@ export function HomePage({
 }: {
   onNavigate: (page: SettingsPage) => void;
 }) {
+  const { lang, t, tp } = useTranslation();
   const [recent, setRecent] = useState<HistoryEntry[] | null>(null);
   const [stats, setStats] = useState<HistoryStatsPair | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -111,48 +120,35 @@ export function HomePage({
   return (
     <section className="home-page flex flex-col gap-8">
       <div className="flex flex-col gap-1">
-        <h2 className="text-xl font-semibold">Bienvenue dans Vozel</h2>
-        <p className="text-sm text-muted-foreground">
-          Dictée voix-vers-texte, 100&nbsp;% locale. Placez le curseur où vous
-          voulez écrire, maintenez le raccourci, parlez&nbsp;: à la fin, le
-          texte est inséré à l'endroit du curseur.
-        </p>
+        <h2 className="text-xl font-semibold">{t("home.welcome_title")}</h2>
+        <p className="text-sm text-muted-foreground">{t("home.welcome_body")}</p>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Déclencheur de dictée</CardTitle>
-          <CardDescription>
-            Maintenez les deux touches ensemble pendant que vous parlez,
-            relâchez pour transcrire et insérer.
-          </CardDescription>
+          <CardTitle className="text-base">{t("home.trigger_title")}</CardTitle>
+          <CardDescription>{t("home.trigger_desc")}</CardDescription>
         </CardHeader>
         <CardContent>
           <kbd className="inline-flex items-center rounded-md border border-border bg-muted px-2.5 py-1 font-mono text-sm font-medium">
             Ctrl + Win
           </kbd>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Raccourci unique et fixe. Note&nbsp;: relâcher la touche Windows en
-            dernier peut ouvrir le menu Démarrer.
-          </p>
+          <p className="mt-2 text-sm text-muted-foreground">{t("home.trigger_note")}</p>
         </CardContent>
       </Card>
 
       {loadError ? (
-        <p className="text-sm text-destructive">
-          Impossible de charger l'historique&nbsp;: {loadError}
-        </p>
+        <p className="text-sm text-destructive">{t("home.load_error", { error: loadError })}</p>
       ) : recent === null || stats === null ? (
-        <p className="text-sm text-muted-foreground">Chargement…</p>
+        <p className="text-sm text-muted-foreground">{t("home.loading")}</p>
       ) : isEmpty ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Vos dictées</CardTitle>
+            <CardTitle className="text-base">{t("home.your_dictations_title")}</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-              Aucune dictée pour l'instant. Vos dictées apparaîtront ici, avec un
-              résumé de votre activité du jour et de la semaine.
+              {t("home.empty_body")}
             </p>
           </CardContent>
         </Card>
@@ -160,26 +156,24 @@ export function HomePage({
         <>
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Votre activité</CardTitle>
-              <CardDescription>
-                Compté localement sur cette machine, jamais partagé.
-              </CardDescription>
+              <CardTitle className="text-base">{t("home.activity_title")}</CardTitle>
+              <CardDescription>{t("home.activity_desc")}</CardDescription>
             </CardHeader>
             <CardContent className="grid grid-cols-2 gap-3">
-              <StatBlock label="Aujourd'hui" stats={stats.today} />
-              <StatBlock label="7 derniers jours" stats={stats.week} />
+              <StatBlock label={t("home.stat_today")} stats={stats.today} />
+              <StatBlock label={t("home.stat_week")} stats={stats.week} />
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex-row items-center justify-between">
-              <CardTitle className="text-base">Dictées récentes</CardTitle>
+              <CardTitle className="text-base">{t("home.recent_title")}</CardTitle>
               <button
                 type="button"
                 onClick={() => onNavigate("history")}
                 className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
               >
-                Voir tout l'historique
+                {t("home.see_all_history")}
                 <ArrowRight className="size-3.5" />
               </button>
             </CardHeader>
@@ -194,9 +188,9 @@ export function HomePage({
                     >
                       <span className="text-sm text-foreground">{preview(entry.text)}</span>
                       <span className="text-xs text-muted-foreground">
-                        {relativeTime(entry.created_at)}
+                        {relativeTime(entry.created_at, lang, t)}
                         {" · "}
-                        {plural(entry.word_count, "mot", "mots")}
+                        {tp(entry.word_count, "home.stat_word")}
                         {entry.duration_ms != null &&
                           ` · ${Math.max(1, Math.round(entry.duration_ms / 1000))} s`}
                       </span>

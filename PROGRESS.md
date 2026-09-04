@@ -999,3 +999,62 @@ codée en dur du dépôt (le `Grep` de couleurs hex/gray/slate des Sessions
 - `npx tsc --noEmit` vert. Vérifié en app réelle (CDP) : page Dictionnaire,
   carte d'intro bien en `#DADADD`, plus de teinte ambrée.
 - Commit F : `[Frontend] Dictionnaire : la carte d'intro suit la palette grise (couleur ambrée codée en dur oubliée aux Sessions 18/19) (Session 19 suite)`.
+
+### 2026-09-04 — Session 20 — langue de l'interface (FR/EN), défaut anglais + site web en anglais
+
+Demande utilisateur (hors spec) : ajouter dans les réglages une configuration
+de langue français/anglais, l'application par défaut en anglais, et mettre
+également le site web (`vozelwebsite/`) en anglais.
+
+**Backend** — `ui_language: String` ajouté à `Settings` (`storage/settings.rs`),
+défaut `"en"`. Migration `0008_ui_language.sql` (`ALTER TABLE settings ADD
+COLUMN ui_language TEXT NOT NULL DEFAULT 'en'` — bascule aussi les lignes déjà
+existantes en anglais, pas seulement les nouvelles installations, demande
+explicite). `storage::db` : liste de colonnes attendues mise à jour. N'affecte
+que le frontend : les messages d'erreur générés côté Rust (`Result<T, String>`
+renvoyés tels quels aux commandes IPC) restent en français, non traduits —
+les traduire demanderait un mécanisme de code d'erreur côté backend, hors
+périmètre de cette demande, signalé ici comme limite connue.
+`cargo test --lib` **50 / 8 `#[ignore]` / 0 échec**.
+
+**Frontend** — `src/lib/i18n.tsx` (nouveau) : dictionnaire FR/EN fait main
+(~130 clés, pas de dépendance externe type i18next — cohérent avec le parti
+pris du projet contre les dépendances superflues), `LanguageProvider` +
+`useTranslation()` (`{lang, t, tp, setLang}`), monté une seule fois dans
+`SettingsWindow.tsx` (seule fenêtre avec du texte — l'overlay `flow bar` n'en
+a aucun). `setLang` met à jour l'affichage **immédiatement** dans toute la
+fenêtre (pas de redémarrage requis, contrairement au nettoyage IA) tout en
+persistant en tâche de fond via `saveSettings`.
+- Sélecteur de langue ajouté en haut de la section « Général » des Réglages
+  (`ModelPanel.tsx`, nouvelle Card dédiée avant « Moteur de dictée »).
+- Les 8 composants de la fenêtre `main` traduits intégralement : `Sidebar`,
+  `TitleBar`, `SettingsWindow` (titres de page), `HomePage` (dont l'heure
+  relative et les pluriels), `ModelPanel`, `DictionaryPanel`, `HistoryPage`
+  (dont le regroupement par date et les pluriels), `SettingsModal`.
+  `toLocaleDateString`/`toLocaleTimeString` basculent aussi sur `fr-FR`/
+  `en-US` selon la langue choisie.
+- Balayage exhaustif (grep accents FR + mots FR courants, hors commentaires)
+  pour confirmer qu'aucune chaîne codée en dur n'a été oubliée.
+- `npx tsc --noEmit` vert · `npm run build` vert.
+
+**Vérifié en app réelle** (CDP port 9333) : défaut anglais confirmé dès le
+premier lancement (migration + `Settings::default()`) ; bascule vers le
+français depuis les Réglages → toute la fenêtre (modale + sidebar + page
+Accueil derrière) change de langue instantanément, texte français identique
+mot pour mot à l'original (`Accueil`, `Bienvenue dans Vozel`, `Déclencheur de
+dictée`, pluriels « 0 dictée »/« 16 dictées », etc.) — aucune régression de
+contenu.
+
+- Commit à suivre : `[Backend+Frontend] Langue de l'interface FR/EN, défaut anglais (demande utilisateur, Session 20)`.
+
+**Site web** (`vozelwebsite/`, dépôt séparé) — bascule en anglais par défaut :
+`locale`/`lang`/`openGraph.locale` "fr" → "en", tout le contenu traduit
+(config, navigation, contenu FAQ/features/release-notes, tous les composants
+home/download/layout, toutes les pages `app/*/page.tsx`). Commentaires de
+code laissés en français (convention du dépôt). `docs/website/*.md` déjà en
+anglais, non touchés. `npm run build` et `npm run lint` verts. Commit
+`da8403a`, poussé sur `origin main` (déploiement Vercel automatique).
+
+**Aucun test manuel restant propre à ce changement** pour la partie
+desktop (vérifié visuellement en app réelle ci-dessus) ; pour le site web,
+reste à vérifier le rendu du déploiement Vercel une fois le build terminé.
