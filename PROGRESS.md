@@ -1058,3 +1058,51 @@ anglais, non touchés. `npm run build` et `npm run lint` verts. Commit
 **Aucun test manuel restant propre à ce changement** pour la partie
 desktop (vérifié visuellement en app réelle ci-dessus) ; pour le site web,
 reste à vérifier le rendu du déploiement Vercel une fois le build terminé.
+
+### 2026-09-04 — Session 20 (suite) — vraie icône Vozel (app, barre des tâches, exécutable, installateur)
+
+Signalé par l'utilisateur : l'app tournait encore avec l'icône générique
+`create-tauri-app` (le logo teal/jaune par défaut) dans `src-tauri/icons/` —
+jamais remplacée depuis le scaffold initial (fichiers datés du tout premier
+commit). Visible dans la barre des tâches, le sélecteur Alt-Tab, l'explorateur
+de fichiers et (par construction, même config `bundle.icon`) l'installateur.
+
+- Source : `ico-large/Vozel-black-1024x1024.png` (icône seule, confirmée
+  Session 19 lors du rebrand du site web) composée via `sharp` sur un carré
+  1024×1024 rempli en `#DADADD` (le gris de la sidebar/des cards de l'app,
+  `--vz-chrome`/`--card` — cohérence directe avec l'identité visuelle
+  actuelle plutôt qu'une couleur arbitraire), marge ~14 % pour respirer.
+  Fichier gardé sous `src-tauri/app-icon.png` (nom par défaut reconnu par
+  `tauri icon` sans argument, pour une régénération future si la palette
+  change).
+- `npx tauri icon src-tauri/app-icon.png` régénère l'ensemble
+  `src-tauri/icons/` (32×32, 64×64, 128×128, 128×128@2x, icon.png, icon.ico
+  multi-résolution, icon.icns, les `Square*Logo.png`/`StoreLogo.png` pour un
+  éventuel packaging Store). La commande génère aussi des jeux iOS/Android
+  par défaut — supprimés (`src-tauri/icons/ios/`, `.../android/`) : Vozel
+  est Windows uniquement (aucune cible mobile dans `tauri.conf.json`), les
+  garder aurait été hors périmètre.
+- `tauri.conf.json` (`bundle.icon`) référençait déjà exactement les 5
+  fichiers standard régénérés (`32x32.png`, `128x128.png`, `128x128@2x.png`,
+  `icon.icns`, `icon.ico`) — aucun changement de config nécessaire.
+- **Vérifié concrètement, pas juste supposé** : `cargo build` (après avoir
+  forcé la réexécution de `build.rs`, dont Cargo ne détectait pas le
+  changement de contenu des icônes par défaut) puis extraction de l'icône
+  directement depuis `target/debug/vozel.exe` via .NET
+  `System.Drawing.Icon.ExtractAssociatedIcon` — l'exécutable réel embarque
+  bien la nouvelle icône Vozel (plus le logo teal/jaune par défaut). Comme
+  la barre des tâches, Alt-Tab et l'icône affichée dans l'explorateur
+  utilisent tous la même ressource native de l'exe, et que l'installateur
+  NSIS utilise la même config `bundle.icon`, ce test unique couvre les
+  quatre points demandés par l'utilisateur (interface/app, barre des
+  tâches, fichiers de l'app/exécutable, installateur) sans avoir à
+  construire l'installateur complet pour le vérifier séparément.
+- `cargo check --lib` 0 warning.
+
+**Test manuel restant** (non fait ici, nécessite un œil humain sur le vrai
+bureau Windows) : confirmer visuellement que l'icône s'affiche correctement
+dans la barre des tâches et l'Explorateur en usage réel — l'extraction par
+script confirme la ressource embarquée mais pas le rendu final à l'écran
+(mise à l'échelle, thème clair/sombre de la barre des tâches).
+
+- Commit à suivre : `[Backend] Icône Vozel (app, barre des tâches, exe, installateur) — remplace le logo par défaut create-tauri-app (Session 20 suite)`.
