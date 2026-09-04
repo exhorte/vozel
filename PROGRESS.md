@@ -915,3 +915,41 @@ Prompt de reprise Session 17 (`02_Plan_Projet/Prompt_Claude_Code_Suite.md`), d'a
 - `cargo check --lib` 0 warning · `cargo test --lib` **50 / 8 `#[ignore]` / 0 échec** · `npx tsc --noEmit` vert · `npm run build` vert.
 
 **Reste un test utilisateur** : navigation entre les 4 pages en usage réel, ouverture/fermeture de la modale au clic (× et clic hors modale), dicter → voir la dictée apparaître dans « Historique », recherche/suppression/effacement total, dismiss de la carte d'intro du Dictionnaire.
+
+### 2026-09-04 — Session 18 — palette de couleurs unique (deux couleurs + accent)
+
+Demande utilisateur (hors spec, pas de section Spec_Frontend associée) : remplacer
+toutes les couleurs de toutes les interfaces (fenêtre `main` : sidebar, cards,
+fonds, modale Réglages) par deux couleurs uniquement — `#BABBBF` (sidebar +
+cards) et `#EEEEF0` (fond des interfaces) — plus une touche d'accentuation
+laissée à mon choix pour les boutons/éléments actifs. Choisi : indigo
+`#4F46E5` (cohérent avec le style « outil pro » de la référence Wispr Flow,
+bon contraste sur les deux gris). `--destructive` (rouge, suppression/erreur)
+conservé hors palette : couleur sémantique, pas une couleur de surface —
+signalé à l'utilisateur, pas de retour de sa part demandé avant d'agir vu que
+c'est un choix technique mineur et réversible.
+
+- `src/index.css` — `:root` (jetons shadcn : `--background`, `--card`,
+  `--sidebar`, `--primary`/`--accent`, `--muted`, `--border`, etc.) et le bloc
+  `.app-shell`/`.vz-*` (chrome de la fenêtre `main` : barre de titre custom +
+  sidebar repliable, ex-`#3B3C3F`/`#DADADD` de la Session 15 suite 3)
+  recalculés sur la nouvelle palette. Comme la sidebar passe de sombre à
+  claire, le texte/icônes du chrome (`--vz-chrome-fg` et dérivés) passent de
+  clair à sombre pour rester lisibles. Item de nav actif : fond indigo, texte
+  blanc (la « touche d'accentuation »). Rien d'autre ne change (mise en page,
+  composants, logique) — recherche préalable (`Grep`) : aucune couleur
+  codée en dur ailleurs dans `src/` hors composants shadcn de base
+  (`alert-dialog.tsx`/`dialog.tsx`, overlay `bg-black/10`, hors sujet).
+  `.dark` (jamais appliqué, aucun toggle dans l'app) laissé tel quel.
+- `npx tsc --noEmit` vert · `npm run build` vert.
+- **Vérifié en app réelle** (`npm run tauri dev` + CDP sur le port 9333,
+  scripts `cdp_shot.mjs`/`cdp_click_shot.mjs`) : capture des fenêtres
+  `overlay` et `main`, clic sur « Réglages » pour ouvrir la modale. Page
+  Accueil, Dictionnaire (non capturé isolément mais même jetons) et modale
+  Réglages affichent bien `#EEEEF0` en fond, `#BABBBF` pour la sidebar/cards,
+  indigo pour l'item actif et les accents — aucune trace des anciennes
+  couleurs. App fermée proprement après vérification (`taskkill`).
+- Commit D : `[Frontend] Palette d'interface à deux couleurs + accent indigo (#BABBBF / #EEEEF0) sur toutes les fenêtres (hors spec, demande utilisateur, Session 18)`.
+
+**Aucun test manuel restant propre à ce changement** (vérifié visuellement en
+app réelle ci-dessus, changement de couleurs pur sans logique).
