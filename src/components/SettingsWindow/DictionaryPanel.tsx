@@ -199,7 +199,7 @@ export function DictionaryPanel() {
           </p>
         </div>
       ) : (
-        <Card className="relative border-amber-200/60 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-950/20">
+        <Card className="relative">
           <button
             type="button"
             onClick={dismissIntro}

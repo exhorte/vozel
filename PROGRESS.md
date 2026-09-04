@@ -981,3 +981,21 @@ l'accent indigo `#4F46E5` — plus aucune couleur en dehors des nuances de gris.
 
 **Aucun test manuel restant propre à ce changement** (changement de couleurs
 pur, vérifié visuellement ci-dessus).
+
+### 2026-09-04 — Session 19 (suite) — carte d'intro du Dictionnaire oubliée dans le passage au gris
+
+Signalé par l'utilisateur : la carte principale de la page Dictionnaire
+restait dans son ancien style (couleur non personnalisée par les Sessions
+18/19). Cause : `DictionaryPanel.tsx` (Session 17 P4) codait en dur
+`border-amber-200/60 bg-amber-50/60 dark:border-amber-900/40
+dark:bg-amber-950/20` sur cette carte plutôt que de laisser le composant
+`Card` shadcn utiliser les jetons `--card`/`--border` — la seule couleur
+codée en dur du dépôt (le `Grep` de couleurs hex/gray/slate des Sessions
+18/19 ne cherchait pas "amber", donc elle est passée entre les mailles).
+
+- `DictionaryPanel.tsx` : classes amber retirées (`<Card className="relative">`
+  seul) → la carte suit maintenant `--card` (`#DADADD`) comme toutes les
+  autres, sans override.
+- `npx tsc --noEmit` vert. Vérifié en app réelle (CDP) : page Dictionnaire,
+  carte d'intro bien en `#DADADD`, plus de teinte ambrée.
+- Commit F : `[Frontend] Dictionnaire : la carte d'intro suit la palette grise (couleur ambrée codée en dur oubliée aux Sessions 18/19) (Session 19 suite)`.
