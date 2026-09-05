@@ -3,18 +3,20 @@
 // position en bas). `"settings"` n'est PAS une page routée : c'est une
 // superposition.
 //
-// Deux sections réelles seulement — pas d'onglet creux pour coller
-// visuellement à Wispr (System / Vibe coding / Experimental / Account / Team
-// / Billing n'ont aucun équivalent local-first) :
+// Pas d'onglet creux pour coller visuellement à Wispr (System / Vibe coding
+// / Experimental / Team / Billing n'ont aucun équivalent local-first) :
 //   - « Général » : le contenu de `ModelPanel` (moteur ASR local/cloud,
 //     fournisseur + clé, nettoyage IA, rappel du déclencheur Ctrl+Win).
+//   - « Compte » (Session 21) : auth Supabase minimal (email/mot de passe),
+//     voir `AccountSection.tsx`. Ajoutée après « Général », avant
+//     « Données et confidentialité ».
 //   - « Données et confidentialité » : ce que Vozel stocke en local, nuancé
 //     si le cloud est actif. Le bouton « Effacer tout l'historique » vit sur
 //     la page Historique (là où l'historique est réellement consultable) —
 //     pas dupliqué ici, seulement rappelé.
 
 import { useEffect, useState } from "react";
-import { ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { CircleUser, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -25,11 +27,13 @@ import {
 import { getSettings } from "@/lib/tauri";
 import { useTranslation } from "@/lib/i18n";
 import { ModelPanel } from "./ModelPanel";
+import { AccountSection } from "./AccountSection";
 
-type Section = "general" | "privacy";
+type Section = "general" | "account" | "privacy";
 
 const SECTIONS: Array<{ id: Section; labelKey: string; icon: typeof SlidersHorizontal }> = [
   { id: "general", labelKey: "settingsModal.section_general", icon: SlidersHorizontal },
+  { id: "account", labelKey: "settingsModal.section_account", icon: CircleUser },
   { id: "privacy", labelKey: "settingsModal.section_privacy", icon: ShieldCheck },
 ];
 
@@ -71,6 +75,7 @@ export function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
 
           <div className="min-h-0 flex-1 overflow-y-auto p-6">
             {section === "general" && <ModelPanel />}
+            {section === "account" && <AccountSection />}
             {section === "privacy" && <PrivacySection />}
           </div>
         </div>

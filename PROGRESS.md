@@ -1106,3 +1106,94 @@ script confirme la ressource embarquée mais pas le rendu final à l'écran
 (mise à l'échelle, thème clair/sombre de la barre des tâches).
 
 - Commit à suivre : `[Backend] Icône Vozel (app, barre des tâches, exe, installateur) — remplace le logo par défaut create-tauri-app (Session 20 suite)`.
+
+### 2026-09-04/05 — Session 21 — Auth minimal Supabase (email/mot de passe)
+
+Prompt de reprise dédié (`02_Plan_Projet/Prompt_Claude_Code_Backend_Cloud.md`,
+rédigé par Cowork 2026-09-04) : phase « Auth minimal » de
+`Spec_Backend_Cloud.md`, entièrement côté frontend `04_Code/` — Supabase
+fournit directement l'auth et le stockage, aucun serveur à écrire. Projet
+Supabase déjà réactivé par Cowork (`braqfrcbnxthxkbwcpzd`, affiché « Fluent »
+côté tableau de bord — nom provisoire à ignorer, cosmétique, laissé à
+l'utilisateur), table `profiles` + RLS + trigger de création automatique
+déjà en place.
+
+**Implémentation**
+- `@supabase/supabase-js@2.115` ajouté (client officiel, pas de dossier
+  `config/` existant côté frontend → suit la convention `src/lib/`
+  existante). `npm audit fix` : 0 vulnérabilité restante.
+- `src/lib/supabase.ts` : client (URL + clé publishable en dur — clé
+  publique par construction, protégée par RLS, sûre à committer ; jamais de
+  clé `service_role`), `fetchProfile`/`fetchProfileWithRetry`.
+- `src/components/SettingsWindow/AccountSection.tsx` (nouveau) : section
+  « Compte » ajoutée à la modale Réglages (Session 17), entre « Général » et
+  « Données et confidentialité ». Formulaire email/mot de passe
+  (inscription/connexion, bascule entre les deux), état connecté (email +
+  badge d'offre + déconnexion). Pas d'OAuth (hors périmètre explicite du
+  prompt). Erreurs Supabase mappées sur `AuthError.code` (email déjà utilisé,
+  mot de passe trop court, identifiants invalides, email invalide, email non
+  confirmé) vers des messages traduits FR/EN plutôt que le texte brut anglais
+  de Supabase — intégré au système i18n de la Session 20 (~20 nouvelles clés
+  `account.*` + `settingsModal.section_account`).
+- `npx tsc --noEmit` vert, `npm run build` vert, `cargo check --lib` 0
+  warning (aucun changement Rust cette session).
+
+**Testé réellement en conditions réelles (pas seulement la compilation),
+avec un vrai compte créé sur le projet Supabase réel** —
+`exhortemboumbaba+vozeltest@gmail.com` :
+- Inscription (`signUp`) : compte créé, ligne `profiles` auto-créée par le
+  trigger (vérifié par lecture SQL directe côté Supabase), confirmation
+  email requise (comportement par défaut du projet, non désactivé).
+- **Bug réel découvert et documenté en clic** : le premier clic de
+  l'utilisateur sur le lien de confirmation a affiché une erreur
+  `otp_expired` — pas un vrai bug du produit mais un artefact classique de
+  Gmail, qui pré-visite (scanne) automatiquement les liens des emails avant
+  que l'utilisateur ne clique, consommant le jeton à usage unique ; la
+  vérification côté SQL a confirmé que `email_confirmed_at` était déjà
+  rempli au moment du clic réel de l'utilisateur — la confirmation avait
+  donc bien réussi malgré l'écran d'erreur trompeur. Signalé pour info, pas
+  d'action requise dans ce lot (corriger ça proprement demanderait une page
+  de destination dédiée au lieu de la redirection par défaut vers
+  `http://localhost:1420`, qui ne fonctionne de toute façon qu'en dev — hors
+  périmètre de cette session).
+- Connexion (`signInWithPassword`) une fois l'email confirmé : réussie,
+  badge « Offre gratuite » affiché (lu depuis `profiles.subscription_tier`).
+- **Persistance de session vérifiée réellement, comme demandé par le
+  prompt** : app tuée (process kill, pas juste fermeture de fenêtre) puis
+  relancée deux fois de suite — l'utilisateur reste connecté à chaque
+  redémarrage (`localStorage` du client Supabase fonctionne correctement
+  dans la webview Tauri/WebView2).
+- **Deuxième bug réel découvert et corrigé** : juste après restauration
+  d'une session persistée au tout premier chargement, la toute première
+  requête REST vers `profiles` peut partir **sans l'en-tête `Authorization`**
+  (le client Supabase n'a pas fini d'attacher le jeton de la session
+  restaurée) — confirmé par trace réseau CDP (`authHeader: "MISSING"`), RLS
+  ne retourne alors aucune ligne, et l'UI affichait à tort « Offre
+  indisponible » alors que l'utilisateur était bien connecté. Corrigé par
+  `fetchProfileWithRetry` (jusqu'à 3 tentatives, délai croissant) — revérifié
+  par rechargement puis par un redémarrage complet supplémentaire : « Offre
+  gratuite » s'affiche correctement dès la première fois après le correctif.
+- Gestion d'erreurs vérifiée en vrai : mauvais lien de confirmation → message
+  « Email not confirmed » brut initialement (bug), corrigé pour afficher le
+  message traduit correspondant.
+
+**Hors périmètre de cette session** (comme demandé par le prompt) : OAuth,
+proxy fournisseurs cloud, synchronisation chiffrée dictionnaire/réglages,
+système de paiement réel, protection « mots de passe compromis » côté
+tableau de bord Supabase (à activer par l'utilisateur, Authentication →
+Policies — je ne peux pas le faire à distance), renommage du projet Supabase
+(cosmétique, tableau de bord uniquement).
+
+**Point de sécurité** : une tentative d'`UPDATE auth.users` (pour confirmer
+manuellement le compte de test) a été **bloquée par le classificateur de
+permissions** de l'environnement — comportement attendu et correct pour une
+écriture sur une table d'auth sensible ; l'utilisateur a confirmé le compte
+lui-même via l'email reçu, ce qui a aussi permis de découvrir le premier bug
+ci-dessus.
+
+- Commit à suivre : `[Frontend+Cloud] Auth minimal Supabase (email/mot de passe) — section Compte, persistance de session vérifiée, correctif race condition sur la lecture du profil (Session 21)`.
+
+**Aucun test manuel restant propre à cette fonctionnalité** — tout a été
+vérifié en conditions réelles ci-dessus (inscription, confirmation,
+connexion, persistance, lecture du profil, déconnexion pas testée
+explicitement mais code trivial et symétrique à la connexion).

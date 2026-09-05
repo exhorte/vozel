@@ -210,6 +210,28 @@ const en: Dict = {
   "settingsModal.privacy_history_note_link": "History",
   "settingsModal.privacy_history_note_after":
     "page in the sidebar (each dictation can also be deleted individually there).",
+
+  "settingsModal.section_account": "Account",
+  "account.title": "Account",
+  "account.subtitle": "Sign in to sync your dictionary and settings across devices (coming soon) and see your plan.",
+  "account.loading": "Checking your session…",
+  "account.email_label": "Email",
+  "account.password_label": "Password",
+  "account.sign_in": "Sign in",
+  "account.sign_up": "Create account",
+  "account.sign_out": "Sign out",
+  "account.switch_to_signin": "Already have an account? Sign in",
+  "account.switch_to_signup": "No account yet? Create one",
+  "account.signup_success": "Account created. Check your email to confirm it, if required.",
+  "account.tier_free": "Free plan",
+  "account.tier_pro": "Pro plan",
+  "account.tier_unknown": "Plan unavailable",
+  "account.error_email_taken": "This email is already in use.",
+  "account.error_weak_password": "Password must be at least 6 characters.",
+  "account.error_invalid_credentials": "Incorrect email or password.",
+  "account.error_invalid_email": "This email address doesn't look valid.",
+  "account.error_email_not_confirmed":
+    "Please confirm your email before signing in — check your inbox for the confirmation link.",
 };
 
 const fr: Dict = {
@@ -380,6 +402,28 @@ const fr: Dict = {
   "settingsModal.privacy_history_note_link": "Historique",
   "settingsModal.privacy_history_note_after":
     "de la barre latérale (chaque dictée peut aussi y être supprimée individuellement).",
+
+  "settingsModal.section_account": "Compte",
+  "account.title": "Compte",
+  "account.subtitle": "Connectez-vous pour synchroniser votre dictionnaire et vos réglages entre appareils (bientôt) et voir votre offre.",
+  "account.loading": "Vérification de la session…",
+  "account.email_label": "Email",
+  "account.password_label": "Mot de passe",
+  "account.sign_in": "Se connecter",
+  "account.sign_up": "Créer un compte",
+  "account.sign_out": "Se déconnecter",
+  "account.switch_to_signin": "Déjà un compte ? Se connecter",
+  "account.switch_to_signup": "Pas encore de compte ? En créer un",
+  "account.signup_success": "Compte créé. Vérifiez votre email pour le confirmer, si nécessaire.",
+  "account.tier_free": "Offre gratuite",
+  "account.tier_pro": "Offre Pro",
+  "account.tier_unknown": "Offre indisponible",
+  "account.error_email_taken": "Cet email est déjà utilisé.",
+  "account.error_weak_password": "Le mot de passe doit contenir au moins 6 caractères.",
+  "account.error_invalid_credentials": "Email ou mot de passe incorrect.",
+  "account.error_invalid_email": "Cette adresse email ne semble pas valide.",
+  "account.error_email_not_confirmed":
+    "Confirmez votre email avant de vous connecter — vérifiez votre boîte de réception pour le lien de confirmation.",
 };
 
 const DICTS: Record<Lang, Dict> = { en, fr };
